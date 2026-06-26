@@ -130,8 +130,15 @@
   .ch-group{padding:14px 8px 4px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
     display:flex; align-items:center; justify-content:space-between}
   .ch-add{cursor:pointer; font-size:16px; line-height:1; color:var(--muted); padding:0 2px} .ch-add:hover{color:var(--text)}
-  .channel{padding:9px 10px; margin:1px 8px; border-radius:8px; cursor:pointer; color:var(--muted);
+  .ch-group{cursor:pointer} .cat-caret{display:inline-block; font-size:9px; width:10px}
+  .channel{position:relative; padding:9px 10px; margin:1px 8px; border-radius:8px; cursor:pointer; color:var(--muted);
     display:flex; align-items:center; gap:6px; font-size:15px; justify-content:space-between}
+  .channel.unread .cname{color:var(--text); font-weight:600}
+  .channel.unread::before{content:''; position:absolute; left:-8px; top:50%; transform:translateY(-50%);
+    width:5px; height:9px; background:var(--text); border-radius:0 4px 4px 0}
+  .ch-unread{background:var(--red); color:#fff; border-radius:10px; font-size:11px; font-weight:700;
+    padding:0 6px; min-width:18px; height:18px; line-height:18px; text-align:center; flex-shrink:0}
+  .channel:hover .ch-unread{display:none}
   .channel:hover{background:#35373c; color:var(--text)}
   .channel.active{background:#404249; color:var(--text)}
   .channel .cname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1}
@@ -343,9 +350,15 @@
         <span style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
       </div>
       <div class="scroll">
-        <div class="ch-group">Yazi Kanallari <span class="ch-add" onclick="addChannel('text')" title="Kanal ekle">＋</span></div>
+        <div class="ch-group" onclick="toggleCat('text')">
+          <span><span class="cat-caret" id="caretText">▾</span> Yazi Kanallari</span>
+          <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('text')" title="Kanal ekle">＋</span>
+        </div>
         <div id="textChannels"></div>
-        <div class="ch-group">Sesli Kanallar <span class="ch-add" onclick="addChannel('voice')" title="Sesli kanal ekle">＋</span></div>
+        <div class="ch-group" onclick="toggleCat('voice')">
+          <span><span class="cat-caret" id="caretVoice">▾</span> Sesli Kanallar</span>
+          <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('voice')" title="Sesli kanal ekle">＋</span>
+        </div>
         <div id="voiceChannels"></div>
       </div>
 
@@ -404,8 +417,11 @@
 
       <!-- Arkadaslar gorunumu -->
       <div class="friends-view" id="friendsView">
-        <h2>👥 Arkadaslar</h2>
-        <div class="add-row">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap">
+          <h2>👥 Arkadaslar</h2>
+          <button class="btn" style="width:auto" onclick="copyInvite()">🔗 Davet Et</button>
+        </div>
+        <div class="add-row" style="margin-top:14px">
           <input id="addFriendInput" placeholder="Kullanici adi yaz..." maxlength="32">
           <button class="btn" onclick="addFriend()">Arkadas Ekle</button>
         </div>
@@ -529,19 +545,23 @@
     <!-- Sunucu Ayarlari -->
     <div class="settings-section" id="sec-server">
       <h1>Sunucu Ayarlari</h1>
+      <div id="svOwnerNote" style="display:none; background:rgba(218,55,60,.15); border:1px solid var(--red); color:#f0b6b8; border-radius:8px; padding:12px; margin-bottom:14px; font-size:14px">
+        🔒 Sunucu ayarlarini yalnizca <b>sunucu sahibi</b> degistirebilir.
+      </div>
       <div class="acct-card" style="padding:16px">
         <div class="acct-head" style="margin-top:0; padding:0 0 14px">
-          <div class="pava" id="svIcon" onclick="serverIconInput.click()" title="Sunucu ikonunu degistir" style="cursor:pointer"></div>
-          <button class="btn sec" style="width:auto; margin-top:30px" onclick="serverIconInput.click()">📷 Ikon Yukle</button>
+          <div class="pava" id="svIcon" title="Sunucu ikonu"></div>
+          <button class="btn sec owner-edit" style="width:auto; margin-top:30px" onclick="serverIconInput.click()">📷 Ikon Yukle</button>
           <input type="file" id="serverIconInput" accept="image/*" style="display:none" onchange="uploadServerIcon()">
         </div>
         <div class="label">Sunucu Adi</div>
         <input id="svName" maxlength="40" placeholder="Sunucu adi"
           style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); outline:none; margin-bottom:14px">
-        <button class="btn" style="width:auto" onclick="saveServerName()">Kaydet</button>
+        <button class="btn owner-edit" style="width:auto" onclick="saveServerName()">Kaydet</button>
+        <button class="btn sec" style="width:auto; margin-left:8px" onclick="copyInvite()">🔗 Davet Linki</button>
       </div>
       <p style="color:var(--muted); font-size:13px; margin-top:14px">
-        Kanal ekleme / silme / yeniden adlandirma: sol taraftaki kanal listesinde
+        Kanal ekleme / silme / yeniden adlandirma (sahip): sol taraftaki kanal listesinde
         kategori basligindaki <b>＋</b> ile ekle, kanalin uzerine gelince cikan
         <b>✎</b> / <b>🗑</b> ile duzenle.
       </p>
@@ -563,6 +583,7 @@ let serverInfo = { name:'SUICIDEHOTLINE', icon:null };
 let textChannels = [], voiceChannels = [];
 let es = null, presenceVoice = {};
 let lastMembers = [];
+let unread = {};                      // kanal -> okunmamis mesaj sayisi
 let myProfile = { avatar:null, bio:'' };
 let myFriends = { friends:[], requests:[] };
 const profileCache = {};            // username -> {avatar, bio}
@@ -634,6 +655,10 @@ function settingsTab(name){
     const a=$('svIcon');
     if(serverInfo.icon){ a.style.backgroundImage=`url('${serverInfo.icon}')`; a.textContent=''; }
     else { a.style.backgroundImage=''; a.textContent=(serverInfo.name||'S').slice(0,2).toUpperCase(); }
+    const owner = amOwner();
+    $('svName').disabled = !owner;
+    $('svOwnerNote').style.display = owner ? 'none' : 'block';
+    document.querySelectorAll('#sec-server .owner-edit').forEach(e=>e.style.display = owner ? '' : 'none');
   }
 }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('settings').classList.contains('open')) closeSettings(); });
@@ -718,13 +743,19 @@ function handle(m){
       myFriends = m.friends || myFriends;
       if(m.server) applyServer(m.server);
       if(!textChannels.includes(currentChannel)) currentChannel = textChannels[0] || 'genel';
-      refreshMe(); renderChannels(); renderMessages(m.history[currentChannel]||[]); updateReqBadge();
+      refreshMe(); renderChannels(); applyCatCollapse(); applyOwnerUI();
+      renderMessages(m.history[currentChannel]||[]); updateReqBadge();
       break;
-    case 'message':
+    case 'message': {
       cacheProfile(m.user, {avatar:m.avatar});
       if(typingState[m.user]){ delete typingState[m.user]; renderTyping(); }
-      if(!currentDM && m.channel===currentChannel) appendMessage(m);
+      const viewing = !currentDM && !inVoiceView() && m.channel===currentChannel;
+      if(viewing){ appendMessage(m); }
+      else if(m.user.toLowerCase()!==username.toLowerCase()){
+        unread[m.channel]=(unread[m.channel]||0)+1; renderChannels();
+      }
       break;
+    }
     case 'message-edit': {
       if(currentDM || m.channel!==currentChannel) break;
       const t=msgEl(m.msgId)&&msgEl(m.msgId).querySelector('.text');
@@ -803,27 +834,45 @@ function applyServer(s){
   if(s.icon){ rs.style.backgroundImage=`url('${s.icon}')`; rs.textContent=''; }
   else { rs.style.backgroundImage=''; rs.textContent=(s.name||'S').slice(0,2).toUpperCase(); }
   rs.title = s.name || '';
-  applyRecBlink();
+  applyRecBlink(); applyOwnerUI(); renderChannels();
 }
 
 // ======== Kanallar ========
+function amOwner(){ return !serverInfo.owner || (username && serverInfo.owner.toLowerCase()===username.toLowerCase()); }
+function chToolsHTML(kind,i){
+  return amOwner() ? `<span class="ch-tools">
+    <span onclick="event.stopPropagation();renameChannel('${kind}',${i})" title="Yeniden adlandir">✎</span>
+    <span onclick="event.stopPropagation();deleteChannel('${kind}',${i})" title="Sil">🗑</span></span>` : '';
+}
 function renderChannels(){
-  $('textChannels').innerHTML = textChannels.map((c,i)=>
-    `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''}" onclick="openChannel('${esc(c)}')">
+  $('textChannels').innerHTML = textChannels.map((c,i)=>{
+    const u = unread[c]||0;
+    return `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''} ${u?'unread':''}" onclick="openChannel('${esc(c)}')">
        <span class="cname"># ${esc(c)}</span>
-       <span class="ch-tools">
-         <span onclick="event.stopPropagation();renameChannel('text',${i})" title="Yeniden adlandir">✎</span>
-         <span onclick="event.stopPropagation();deleteChannel('text',${i})" title="Sil">🗑</span>
-       </span></div>`).join('');
+       ${u?`<span class="ch-unread">${u>99?'99+':u}</span>`:''}${chToolsHTML('text',i)}</div>`;
+  }).join('');
   $('voiceChannels').innerHTML = voiceChannels.map((c,i)=>{
     const mems=(presenceVoice[c]||[]).map(u=>`<div class="voice-member">${avaHTML(u.user,20)}<span onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span></div>`).join('');
     return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">
-       <span class="cname">🔊 ${esc(c)}</span>
-       <span class="ch-tools">
-         <span onclick="event.stopPropagation();renameChannel('voice',${i})" title="Yeniden adlandir">✎</span>
-         <span onclick="event.stopPropagation();deleteChannel('voice',${i})" title="Sil">🗑</span>
-       </span></div><div class="voice-members">${mems}</div>`;
+       <span class="cname">🔊 ${esc(c)}</span>${chToolsHTML('voice',i)}</div><div class="voice-members">${mems}</div>`;
   }).join('');
+}
+// Katlanabilir kategoriler
+let catCollapsed = {}; try{ catCollapsed = JSON.parse(localStorage.getItem('catCollapsed')||'{}'); }catch(e){}
+function toggleCat(kind){ catCollapsed[kind]=!catCollapsed[kind]; localStorage.setItem('catCollapsed', JSON.stringify(catCollapsed)); applyCatCollapse(); }
+function applyCatCollapse(){
+  [['text','textChannels','caretText'],['voice','voiceChannels','caretVoice']].forEach(([k,lst,car])=>{
+    const l=$(lst), c=$(car);
+    if(l) l.style.display = catCollapsed[k] ? 'none' : '';
+    if(c) c.textContent = catCollapsed[k] ? '▸' : '▾';
+  });
+}
+function applyOwnerUI(){ const show=amOwner(); document.querySelectorAll('.owner-only').forEach(e=>e.style.display = show?'':'none'); }
+function copyInvite(){
+  const url = location.origin || (location.protocol+'//'+location.host);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>toast('🔗 Davet linki kopyalandi: '+url)).catch(()=>prompt('Davet linki (kopyala):', url));
+  } else prompt('Davet linki (kopyala):', url);
 }
 
 // ======== Kanal yonetimi ========
@@ -888,6 +937,7 @@ function inVoiceView(){ return $('videoArea').style.display==='block'; }
 
 function openChannel(c){
   currentDM=null; currentChannel=c; cancelReply(); typingState={}; renderTyping();
+  delete unread[c];
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
@@ -1063,9 +1113,11 @@ function renderMembers(members){
   lastMembers = members || lastMembers;
   const on = lastMembers.filter(x=>x.online), off = lastMembers.filter(x=>!x.online);
   $('onlineCount').textContent = on.length;
-  const row = (u,online)=>
-    `<div class="member ${online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
-    `<span class="mname">${esc(u.user)}</span>${online?'<span class="dot"></span>':''}</div>`;
+  const row = (u,online)=>{
+    const crown = (serverInfo.owner && u.user.toLowerCase()===serverInfo.owner.toLowerCase()) ? ' <span title="Sunucu sahibi">👑</span>' : '';
+    return `<div class="member ${online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
+    `<span class="mname">${esc(u.user)}${crown}</span>${online?'<span class="dot"></span>':''}</div>`;
+  };
   let html = on.map(u=>row(u,true)).join('');
   if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(u=>row(u,false)).join('');
   $('memberList').innerHTML = html;

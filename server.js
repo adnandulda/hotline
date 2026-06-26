@@ -43,8 +43,9 @@ const VOICE_CHANNELS = (_ch && Array.isArray(_ch.voice)) ? _ch.voice : ['Sesli O
 function saveChannels(){ saveJSON(CHANNELS_FILE, { text: TEXT_CHANNELS, voice: VOICE_CHANNELS }); }
 
 // --- Sunucu ayarlari ---
-let serverInfo = loadJSON(SERVER_FILE, { name: 'SUICIDEHOTLINE', icon: null });
+let serverInfo = loadJSON(SERVER_FILE, { name: 'SUICIDEHOTLINE', icon: null, owner: null });
 function saveServer(){ saveJSON(SERVER_FILE, serverInfo); }
+function isOwner(u){ return !serverInfo.owner || key(serverInfo.owner) === key(u); }  // sahip yoksa herkes yetkili (geriye uyum)
 
 function dmKey(a, b){ return [key(a), key(b)].sort().join('|'); }
 function allUsernames(){
@@ -172,6 +173,7 @@ const server = http.createServer((req, res) => {
       const salt = crypto.randomBytes(16).toString('hex');
       users[email] = { username, salt, hash: hashPassword(password, salt), created: Date.now() };
       saveJSON(USERS_FILE, users);
+      if (!serverInfo.owner){ serverInfo.owner = username; saveServer(); }  // ilk kaydolan = sunucu sahibi
       getFriendData(username);
       const token = createSession(username);
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -334,6 +336,7 @@ const server = http.createServer((req, res) => {
     return readJSON(req, (data) => {
       const c = clients.get(data.id);
       if (!c){ res.writeHead(401); return res.end('giris yap'); }
+      if (!isOwner(c.user)){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sadece sunucu sahibi kanallari duzenleyebilir' })); }
       const kind = data.kind === 'voice' ? 'voice' : 'text';
       const list = kind === 'voice' ? VOICE_CHANNELS : TEXT_CHANNELS;
       const fail = (m) => { res.writeHead(400, { 'Content-Type':'application/json' }); res.end(JSON.stringify({ error:m })); };
@@ -372,6 +375,7 @@ const server = http.createServer((req, res) => {
     return readJSON(req, (data) => {
       const c = clients.get(data.id);
       if (!c){ res.writeHead(401); return res.end('giris yap'); }
+      if (!isOwner(c.user)){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sadece sunucu sahibi' })); }
       const name = String(data.name||'').trim().slice(0,40);
       if (name) serverInfo.name = name;
       saveServer();
@@ -384,6 +388,7 @@ const server = http.createServer((req, res) => {
   if (p === '/api/server-icon' && req.method === 'POST'){
     const c = clients.get(req.headers['x-client-id']);
     if (!c){ res.writeHead(401); return res.end(); }
+    if (!isOwner(c.user)){ res.writeHead(403); return res.end(); }
     return saveBinary(req, res, (file) => {
       serverInfo.icon = file.url; saveServer();
       broadcast({ type:'server', server: serverInfo });
