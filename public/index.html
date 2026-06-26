@@ -181,15 +181,6 @@
       <button class="btn" onclick="doRegister()">Kayit Ol</button>
       <p class="auth-switch">Zaten hesabin var mi? <a onclick="showAuth('login')">Giris yap</a></p>
     </div>
-
-    <!-- E-posta dogrulama -->
-    <div id="verifyForm" style="display:none">
-      <p id="verifyMsg">E-posta adresine bir kod gonderildi</p>
-      <input id="verifyCode" inputmode="numeric" maxlength="6" placeholder="6 haneli kod" autocomplete="one-time-code">
-      <div class="auth-err" id="verifyErr"></div>
-      <button class="btn" onclick="doVerify()">Dogrula</button>
-      <p class="auth-switch"><a onclick="doResend()">Kodu tekrar gonder</a> · <a onclick="showAuth('register')">Geri</a></p>
-    </div>
   </div>
 </div>
 
@@ -329,12 +320,10 @@ function avaHTML(user, size){
 }
 
 // ======== Giris / Kayit ========
-let pendingEmail = '';
 function showAuth(which){
   $('loginForm').style.display = which==='login' ? 'block' : 'none';
   $('registerForm').style.display = which==='register' ? 'block' : 'none';
-  $('verifyForm').style.display = which==='verify' ? 'block' : 'none';
-  ['loginErr','regErr','verifyErr'].forEach(id=>{ $(id).textContent=''; $(id).style.color=''; });
+  ['loginErr','regErr'].forEach(id=>{ $(id).textContent=''; $(id).style.color=''; });
 }
 function startSession(t, name){
   token = t; username = name;
@@ -365,34 +354,7 @@ async function doRegister(){
       body:JSON.stringify({username,email,password})});
     const d=await r.json();
     if(!r.ok){ err.textContent=d.error||'Kayit basarisiz'; return; }
-    pendingEmail = d.email || email;
-    let msg = pendingEmail + ' adresine 6 haneli bir kod gonderildi.';
-    if(d.devCode) msg += ' (Test modu — kod: '+d.devCode+')';
-    $('verifyMsg').textContent = msg;
-    $('verifyCode').value='';
-    showAuth('verify'); $('verifyCode').focus();
-  }catch(e){ err.textContent='Baglanti hatasi'; }
-}
-async function doVerify(){
-  const code=$('verifyCode').value.trim(); const err=$('verifyErr'); err.textContent='';
-  if(!code){ err.textContent='Kodu gir'; return; }
-  try{
-    const r=await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:pendingEmail,code})});
-    const d=await r.json();
-    if(!r.ok){ err.textContent=d.error||'Dogrulama basarisiz'; return; }
     startSession(d.token, d.username);
-  }catch(e){ err.textContent='Baglanti hatasi'; }
-}
-async function doResend(){
-  const err=$('verifyErr'); err.textContent=''; err.style.color='';
-  try{
-    const r=await fetch('/api/resend',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:pendingEmail})});
-    const d=await r.json();
-    if(!r.ok){ err.textContent=d.error||'Gonderilemedi'; return; }
-    let msg='Yeni kod gonderildi.'; if(d.devCode) msg+=' (Test kodu: '+d.devCode+')';
-    err.style.color='var(--green)'; err.textContent=msg;
   }catch(e){ err.textContent='Baglanti hatasi'; }
 }
 async function logout(){
@@ -413,7 +375,6 @@ async function tryAutoLogin(){
 // Enter tusu ile gonder
 ['loginEmail','loginPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); }));
 ['regName','regEmail','regPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doRegister(); }));
-$('verifyCode').addEventListener('keydown',e=>{ if(e.key==='Enter') doVerify(); });
 tryAutoLogin();
 
 // ======== SSE ========
