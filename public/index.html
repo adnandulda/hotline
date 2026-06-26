@@ -249,6 +249,9 @@
   .video-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; align-content:start}
   .tile{background:var(--bg3); border-radius:10px; overflow:hidden; position:relative; aspect-ratio:16/9}
   .tile video{width:100%; height:100%; object-fit:cover; background:#000}
+  .tile.speaking{box-shadow:inset 0 0 0 3px var(--green)}
+  .tile .vol{position:absolute; top:8px; right:8px; width:84px; display:none; accent-color:var(--accent)}
+  .tile:hover .vol{display:block}
   .tile .label{position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.6); padding:3px 10px; border-radius:6px; font-size:13px}
   .tile .novid{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:700; color:#fff; background:var(--accent); background-size:cover; background-position:center}
   .controls{display:none; gap:10px; justify-content:center; padding:14px; background:var(--bg2); flex-wrap:wrap}
@@ -514,6 +517,7 @@
       <div class="snav active" id="snav-account" onclick="settingsTab('account')">Hesabim</div>
       <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
       <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
+      <div class="snav" id="snav-voice" onclick="settingsTab('voice')">Ses & Video</div>
       <div class="snav-sep"></div>
       <div class="settings-nav-title">Sunucu</div>
       <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
@@ -567,6 +571,24 @@
       </div>
     </div>
 
+    <!-- Ses & Video -->
+    <div class="settings-section" id="sec-voice">
+      <h1>Ses & Video</h1>
+      <div class="setting-row">
+        <span>🎙️ Bas-konus (PTT) — sadece tusa basiliyken mikrofon acik</span>
+        <label class="switch"><input type="checkbox" id="pttToggle" onchange="togglePTT()"><span class="track"></span></label>
+      </div>
+      <div class="setting-row" id="pttKeyRow" style="display:none">
+        <span>PTT tusu: <b id="pttKeyLabel">Bosluk</b></span>
+        <button class="btn sec" style="width:auto" onclick="rebindPTT(this)">Tus ata</button>
+      </div>
+      <p style="color:var(--muted); font-size:13px; margin-top:10px">
+        Konusan kisinin etrafinda yesil halka cikar. Sesli odada her kisinin
+        ustune gelince ses seviyesi kaydiricisi gorunur. Ekran paylasiminda
+        ses de gonderilir (tarayiciya bagli — Chrome onerilir).
+      </p>
+    </div>
+
     <!-- Sunucu Ayarlari -->
     <div class="settings-section" id="sec-server">
       <h1>Sunucu Ayarlari</h1>
@@ -617,6 +639,11 @@ const sentRequests = new Set();
 // Sesli
 let localStream=null, screenStream=null, currentVoiceRoom=null;
 let micOn=true, deafened=false, micBeforeDeafen=true;   // sesli durum
+let pttOn = localStorage.getItem('ptt')==='1';
+let pttKey = localStorage.getItem('pttKey') || 'Space';
+let pttHeld = false;
+const speakAnalysers = new Map();   // tileId -> {analyser,data,src}
+let speakRAF = null;
 const peers = new Map();
 // STUN + ucretsiz TURN (openrelay) -> farkli aglardaki kisiler de baglanabilsin
 const RTC_CONF = { iceServers:[
@@ -671,10 +698,15 @@ function openSettings(){
 }
 function closeSettings(){ $('settings').classList.remove('open'); }
 function settingsTab(name){
-  ['account','profile','appearance','server'].forEach(n=>{
+  ['account','profile','appearance','voice','server'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
     $('snav-'+n).classList.toggle('active', n===name);
   });
+  if(name==='voice'){
+    $('pttToggle').checked = pttOn;
+    $('pttKeyRow').style.display = pttOn ? 'flex' : 'none';
+    $('pttKeyLabel').textContent = keyName(pttKey);
+  }
   if(name==='server'){
     $('svName').value = serverInfo.name || '';
     const a=$('svIcon');
@@ -1351,6 +1383,9 @@ async function leaveVoice(){
   if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
   if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
   removeTile('local'); currentVoiceRoom=null;
+  speakAnalysers.forEach(a=>{ try{a.src.disconnect();}catch(e){} }); speakAnalysers.clear();
+  if(speakRAF){ cancelAnimationFrame(speakRAF); speakRAF=null; }
+  pttHeld=false;
   $('voiceStatus').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';
   ['btnCam','btnScreen'].forEach(b=>$(b).classList.remove('on'));
@@ -1387,11 +1422,13 @@ function removePeer(id){ const pc=peers.get(id); if(pc){pc.close();peers.delete(
 function addTile(id,label,stream,muted){
   let tile=document.getElementById('tile-'+id);
   if(!tile){ tile=document.createElement('div'); tile.className='tile'; tile.id='tile-'+id;
-    tile.innerHTML=`<div class="novid">${initials(label)}</div><video autoplay playsinline ${muted?'muted':''}></video><div class="label">${esc(label)}</div>`;
+    const vol = id!=='local' ? `<input class="vol" type="range" min="0" max="100" value="100" title="Ses seviyesi" oninput="this.closest('.tile').querySelector('video').volume=this.value/100">` : '';
+    tile.innerHTML=`<div class="novid">${initials(label)}</div><video autoplay playsinline ${muted?'muted':''}></video>${vol}<div class="label">${esc(label)}</div>`;
     $('videoGrid').appendChild(tile); }
   const v=tile.querySelector('video');
   v.srcObject=stream;
   if(id!=='local') v.muted = deafened;   // sagirken karsi tarafin sesi kapali
+  watchSpeaking(id, stream);
   updateTileVideo(id);
 }
 function updateTileVideo(id){
@@ -1400,17 +1437,74 @@ function updateTileVideo(id){
   const has=v.srcObject&&v.srcObject.getVideoTracks().some(t=>t.enabled&&t.readyState==='live');
   tile.querySelector('.novid').style.display=has?'none':'flex';
 }
-function removeTile(id){ const t=document.getElementById('tile-'+id); if(t) t.remove(); }
+function removeTile(id){ unwatchSpeaking(id); const t=document.getElementById('tile-'+id); if(t) t.remove(); }
 
 // --- Mikrofon / sagirlastirma ---
-function applyMic(){ const tr=localStream&&localStream.getAudioTracks()[0]; if(tr) tr.enabled = micOn && !deafened; }
+function micEnabled(){
+  if(deafened || !micOn) return false;
+  if(pttOn && currentVoiceRoom) return pttHeld;   // bas-konus: sadece tusa basiliyken
+  return true;
+}
+function applyMic(){ const tr=localStream&&localStream.getAudioTracks()[0]; if(tr) tr.enabled = micEnabled(); }
 function applyRemoteAudio(){   // sagirken karsi tarafin sesini kapat
   document.querySelectorAll('#videoGrid [id^="tile-"]:not(#tile-local) video').forEach(v=>v.muted=deafened);
 }
 function updateVoiceBtns(){
-  const off = !micOn || deafened;
+  const off = !micOn || deafened || (pttOn && currentVoiceRoom && !pttHeld);
   ['btnMic','barMic'].forEach(id=>{ const e=$(id); if(e){ e.textContent = off?'🔇':'🎤'; e.classList.toggle('muted', off); } });
   ['btnDeaf','barDeaf'].forEach(id=>{ const e=$(id); if(e){ e.textContent = deafened?'🔇':'🎧'; e.classList.toggle('muted', deafened); } });
+}
+// --- Bas-konus (PTT) ---
+function keyName(code){ return code==='Space'?'Bosluk':code.replace('Key','').replace('Digit','Sayi '); }
+function togglePTT(){
+  pttOn=$('pttToggle').checked; localStorage.setItem('ptt', pttOn?'1':'0');
+  $('pttKeyRow').style.display = pttOn ? 'flex' : 'none';
+  pttHeld=false; applyMic(); updateVoiceBtns();
+}
+function rebindPTT(btn){
+  btn.textContent='Bir tusa bas...';
+  const handler=(e)=>{ e.preventDefault(); pttKey=e.code; localStorage.setItem('pttKey',pttKey);
+    $('pttKeyLabel').textContent=keyName(pttKey); btn.textContent='Tus ata';
+    window.removeEventListener('keydown',handler,true); };
+  window.addEventListener('keydown',handler,true);
+}
+const _typingField=()=>{ const t=document.activeElement; return t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'); };
+window.addEventListener('keydown', e=>{
+  if(!pttOn || !currentVoiceRoom || e.repeat) return;
+  if(e.code===pttKey && !_typingField()){ e.preventDefault(); if(!pttHeld){ pttHeld=true; applyMic(); updateVoiceBtns(); } }
+});
+window.addEventListener('keyup', e=>{
+  if(!pttOn) return;
+  if(e.code===pttKey){ pttHeld=false; applyMic(); updateVoiceBtns(); }
+});
+
+// --- Konusma gostergesi (yesil halka) ---
+function watchSpeaking(tileId, stream){
+  try{
+    if(speakAnalysers.has(tileId)) return;   // zaten izleniyor
+    if(!stream || !stream.getAudioTracks().length) return;
+    _actx = _actx || new (window.AudioContext||window.webkitAudioContext)();
+    const src=_actx.createMediaStreamSource(stream);
+    const an=_actx.createAnalyser(); an.fftSize=512; an.smoothingTimeConstant=0.6;
+    src.connect(an);
+    speakAnalysers.set(tileId, { analyser:an, data:new Uint8Array(an.frequencyBinCount), src });
+    if(!speakRAF) speakingLoop();
+  }catch(e){}
+}
+function unwatchSpeaking(tileId){
+  const a=speakAnalysers.get(tileId); if(a){ try{a.src.disconnect();}catch(e){} speakAnalysers.delete(tileId); }
+  const tile=document.getElementById('tile-'+tileId); if(tile) tile.classList.remove('speaking');
+  if(!speakAnalysers.size && speakRAF){ cancelAnimationFrame(speakRAF); speakRAF=null; }
+}
+function speakingLoop(){
+  speakAnalysers.forEach((a,id)=>{
+    a.analyser.getByteFrequencyData(a.data);
+    let sum=0; for(let i=0;i<a.data.length;i++) sum+=a.data[i];
+    const avg=sum/a.data.length;
+    const tile=document.getElementById('tile-'+id);
+    if(tile) tile.classList.toggle('speaking', avg>11);
+  });
+  speakRAF=requestAnimationFrame(speakingLoop);
 }
 function toggleMic(){
   if(deafened){ deafened=false; applyRemoteAudio(); micOn=micBeforeDeafen; } // mute'a basinca sagirlik kalkar
@@ -1458,14 +1552,18 @@ async function toggleCam(){
     }catch(e){ alert('Kameraya erisilemedi: '+e.message); } }
   document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local');
 }
+let screenAudioTrack=null;
 async function toggleScreen(){
   if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; $('btnScreen').classList.remove('on');
     peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s&&localStream.getVideoTracks()[0]) s.replaceTrack(localStream.getVideoTracks()[0]);});
+    if(screenAudioTrack){ peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track===screenAudioTrack); if(s) try{pc.removeTrack(s);}catch(e){}}); screenAudioTrack=null; renegotiateAll(); }
     document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local'); return; }
   try{
-    screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+    screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});  // sistem sesini de paylas (tarayiciya bagli)
     const st=screenStream.getVideoTracks()[0]; st.onended=()=>{ if(screenStream) toggleScreen(); };
     peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) s.replaceTrack(st); else pc.addTrack(st,screenStream);});
+    const sa=screenStream.getAudioTracks()[0];
+    if(sa){ screenAudioTrack=sa; peers.forEach(pc=>pc.addTrack(sa,screenStream)); }
     renegotiateAll();
     document.getElementById('tile-local').querySelector('video').srcObject=screenStream; updateTileVideo('local');
     $('btnScreen').classList.add('on');
