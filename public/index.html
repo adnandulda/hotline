@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#262624">
+<title>Bizim Discord</title>
+<style>
+  :root{
+    --bg:#262624; --bg2:#1f1e1d; --bg3:#161514; --accent:#c96442; --accent2:#d97757;
+    --text:#f5f4ef; --muted:#a8a39a; --green:#5a9d6b; --red:#cc5a4a; --border:#36352f;
+    --serif:Georgia,'Times New Roman',serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;
+    font-family:'Söhne','Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; overflow:hidden}
+  body{background:var(--bg); color:var(--text)}
+  .ava{border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center;
+    font-weight:700; color:#fff; background-size:cover; background-position:center; flex-shrink:0; cursor:pointer}
+
+  /* ---- Giris ---- */
+  #login{position:fixed; inset:0; background:radial-gradient(circle at 30% 20%,#2f2d29,#1a1917);
+    display:flex; align-items:center; justify-content:center; z-index:50; padding:16px}
+  #login .box{background:var(--bg2); padding:36px; border-radius:18px; width:100%; max-width:380px; text-align:center;
+    box-shadow:0 8px 40px rgba(0,0,0,.5); border:1px solid var(--border)}
+  #login h1{font-size:26px; margin-bottom:6px; font-family:var(--serif); font-weight:500}
+  #login p{color:var(--muted); margin-bottom:20px; font-size:14px}
+  input,textarea{font-size:16px}
+  #login input{width:100%; padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg3);
+    color:var(--text); margin-bottom:14px; outline:none}
+  #login input:focus{border-color:var(--accent)}
+  .btn{background:var(--accent); color:#fff; border:none; padding:13px 18px; border-radius:12px;
+    font-size:15px; cursor:pointer; width:100%; transition:.15s; font-weight:500}
+  .btn:hover{background:var(--accent2)}
+  .btn.sec{background:#3a3833} .btn.sec:hover{background:#4a473f}
+  .btn.danger{background:var(--red)}
+
+  /* ---- Yerlesim ---- */
+  #app{display:none; height:100%}
+  .layout{display:flex; height:100%; position:relative}
+
+  /* Sol kanal cubugu */
+  .sidebar{width:240px; background:var(--bg2); display:flex; flex-direction:column; flex-shrink:0; z-index:30;
+    border-right:1px solid var(--border)}
+  .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif)}
+  .scroll{flex:1; overflow-y:auto}
+  .nav-btn{margin:8px; padding:11px; border-radius:10px; background:#302e2a; color:var(--text); cursor:pointer;
+    display:flex; align-items:center; gap:8px; font-size:14px; position:relative}
+  .nav-btn:hover{background:#3a3833}
+  .badge{position:absolute; right:10px; background:var(--red); color:#fff; border-radius:10px;
+    font-size:11px; padding:1px 7px; font-weight:700}
+  .ch-group{padding:14px 8px 4px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px}
+  .channel{padding:9px 10px; margin:1px 8px; border-radius:8px; cursor:pointer; color:var(--muted);
+    display:flex; align-items:center; gap:6px; font-size:15px}
+  .channel:hover{background:#302e2a; color:var(--text)}
+  .channel.active{background:#3a3833; color:var(--text)}
+  .voice-members{margin:0 8px 4px 22px}
+  .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
+  .me-bar{padding:8px 10px; background:var(--bg3); display:flex; align-items:center; gap:8px; cursor:pointer}
+  .me-bar:hover{background:#36383d}
+  .me-bar .gear{margin-left:auto; color:var(--muted); font-size:18px}
+
+  /* Orta */
+  .main{flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0}
+  .topbar{padding:14px; border-bottom:1px solid var(--border); font-weight:500; display:flex; align-items:center; gap:10px}
+  .topbar .menu-btn,.topbar .ppl-btn{display:none; background:none; border:none; color:var(--text); font-size:22px; cursor:pointer}
+  .topbar .title{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .messages{flex:1; overflow-y:auto; padding:14px; -webkit-overflow-scrolling:touch}
+  .msg{display:flex; gap:12px; padding:6px 0}
+  .msg .body{min-width:0}
+  .msg .head{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+  .msg .name{font-weight:600; color:var(--text); cursor:pointer}
+  .msg .name:hover{text-decoration:underline}
+  .msg .time{font-size:11px; color:var(--muted)}
+  .msg .text{color:var(--text); word-wrap:break-word; overflow-wrap:anywhere; white-space:pre-wrap;
+    font-family:var(--serif); font-size:15.5px; line-height:1.5}
+  .msg img.att{max-width:min(340px,80vw); max-height:280px; border-radius:8px; margin-top:6px; display:block}
+  .msg a.file{display:inline-flex; gap:8px; align-items:center; margin-top:6px; background:var(--bg2);
+    padding:10px 14px; border-radius:8px; color:#00a8fc; text-decoration:none; max-width:80vw}
+  .inputbar{padding:0 14px 16px}
+  .inputrow{background:#302e2a; border:1px solid var(--border); border-radius:14px; display:flex; align-items:center; padding:0 8px}
+  .inputrow:focus-within{border-color:var(--accent)}
+  .inputrow input{flex:1; background:none; border:none; color:var(--text); padding:14px 8px; outline:none}
+  .iconbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;padding:6px}
+  .iconbtn:hover{color:var(--text)}
+
+  /* Video */
+  .video-area{flex:1; padding:12px; background:#000; display:none; overflow:auto}
+  .video-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; align-content:start}
+  .tile{background:var(--bg3); border-radius:10px; overflow:hidden; position:relative; aspect-ratio:16/9}
+  .tile video{width:100%; height:100%; object-fit:cover; background:#000}
+  .tile .label{position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.6); padding:3px 10px; border-radius:6px; font-size:13px}
+  .tile .novid{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:700; color:#fff; background:var(--accent); background-size:cover; background-position:center}
+  .controls{display:none; gap:10px; justify-content:center; padding:14px; background:var(--bg2); flex-wrap:wrap}
+  .ctrl{width:52px;height:52px;border-radius:50%;border:none;background:#4e5058;color:#fff;cursor:pointer;font-size:20px}
+  .ctrl:hover{background:#6d6f78}
+  .ctrl.on{background:#fff;color:#000}
+  .ctrl.danger{background:var(--red)}
+
+  /* Sag uyeler */
+  .members{width:210px; background:var(--bg2); padding:16px 10px; overflow-y:auto; flex-shrink:0; z-index:30;
+    border-left:1px solid var(--border)}
+  .members h3{color:var(--muted); font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.5px}
+  .member{display:flex; align-items:center; gap:8px; padding:7px; border-radius:8px; font-size:14px; cursor:pointer}
+  .member:hover{background:#302e2a}
+  .member .dot{width:9px;height:9px;border-radius:50%;background:var(--green); margin-left:auto}
+
+  /* Arkadaslar gorunumu */
+  .friends-view{flex:1; overflow-y:auto; padding:18px; display:none}
+  .friends-view h2{margin-bottom:14px; font-family:var(--serif); font-weight:500}
+  .add-row{display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap}
+  .add-row input{flex:1; min-width:160px; padding:13px; border-radius:12px; border:1px solid var(--border); background:var(--bg3); color:var(--text); outline:none}
+  .add-row input:focus{border-color:var(--accent)}
+  .add-row .btn{width:auto}
+  .flist-title{color:var(--muted); font-size:12px; text-transform:uppercase; margin:18px 0 8px; letter-spacing:.5px}
+  .frow{display:flex; align-items:center; gap:10px; padding:12px; border-radius:12px; background:var(--bg2); margin-bottom:6px; border:1px solid var(--border)}
+  .frow .who{flex:1; min-width:0}
+  .frow .who .n{font-weight:600}
+  .frow .who .s{font-size:12px; color:var(--muted)}
+  .frow .mini{padding:8px 12px; border-radius:6px; border:none; cursor:pointer; font-size:13px; color:#fff}
+  .mini.ok{background:var(--green)} .mini.no{background:#4e5058} .mini.add{background:var(--accent)}
+
+  /* Modal */
+  .modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:60; padding:16px}
+  .modal{background:var(--bg2); border-radius:18px; width:100%; max-width:420px; overflow:hidden; border:1px solid var(--border)}
+  .modal .banner{height:80px; background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  .modal .pbody{padding:0 20px 20px}
+  .modal .pava{width:90px;height:90px;border-radius:50%;border:6px solid var(--bg2); margin-top:-45px; background:var(--accent); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:700; color:#fff; cursor:pointer}
+  .modal h2{margin:10px 0 2px; font-family:var(--serif); font-weight:500} .modal .stat{font-size:13px; color:var(--muted); margin-bottom:12px}
+  .modal .bio{background:var(--bg3); border-radius:12px; padding:12px; min-height:50px; white-space:pre-wrap; margin-bottom:14px; color:var(--text); font-family:var(--serif); line-height:1.5}
+  .modal textarea{width:100%; background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:12px; padding:12px; resize:vertical; min-height:70px; outline:none; margin-bottom:14px}
+  .modal textarea:focus{border-color:var(--accent)}
+  .modal .row{display:flex; gap:8px} .modal .row .btn{flex:1}
+  .modal .label{font-size:12px; color:var(--muted); text-transform:uppercase; margin:4px 0 8px; letter-spacing:.5px}
+
+  .backdrop{display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:25}
+
+  /* ====== MOBIL ====== */
+  @media (max-width: 820px){
+    .topbar .menu-btn,.topbar .ppl-btn{display:block}
+    .sidebar,.members{position:fixed; top:0; bottom:0; transition:transform .25s ease}
+    .sidebar{left:0; transform:translateX(-100%); box-shadow:2px 0 12px rgba(0,0,0,.4)}
+    .sidebar.open{transform:translateX(0)}
+    .members{right:0; width:240px; transform:translateX(100%); box-shadow:-2px 0 12px rgba(0,0,0,.4)}
+    .members.open{transform:translateX(0)}
+    .backdrop.show{display:block}
+    .video-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- GIRIS -->
+<div id="login">
+  <div class="box">
+    <h1>🎮 Bizim Discord</h1>
+    <p>Bir kullanici adi yaz ve gir</p>
+    <input id="nameInput" placeholder="Kullanici adin..." maxlength="32" autofocus>
+    <button class="btn" onclick="enter()">Gir</button>
+  </div>
+</div>
+
+<!-- UYGULAMA -->
+<div id="app">
+  <div class="layout">
+    <div class="backdrop" id="backdrop" onclick="closeDrawers()"></div>
+
+    <!-- SOL -->
+    <div class="sidebar" id="sidebar">
+      <div class="server-name">🎮 Bizim Sunucu</div>
+      <div class="scroll">
+        <div class="nav-btn" onclick="showFriends()">👥 Arkadaslar <span class="badge" id="reqBadge" style="display:none">0</span></div>
+        <div class="ch-group">Yazi Kanallari</div>
+        <div id="textChannels"></div>
+        <div class="ch-group">Sesli Kanallar</div>
+        <div id="voiceChannels"></div>
+      </div>
+      <div class="me-bar" onclick="openEditProfile()">
+        <div class="ava" id="meAva" style="width:34px;height:34px">?</div>
+        <div id="meName" style="font-weight:600; overflow:hidden; text-overflow:ellipsis"></div>
+        <div class="gear">⚙️</div>
+      </div>
+    </div>
+
+    <!-- ORTA -->
+    <div class="main">
+      <div class="topbar">
+        <button class="menu-btn" onclick="toggleDrawer('sidebar')">☰</button>
+        <span id="topIcon">#</span>
+        <span class="title" id="topName">genel</span>
+        <button class="ppl-btn" onclick="toggleDrawer('members')">👥</button>
+      </div>
+
+      <!-- Mesajlar -->
+      <div class="messages" id="messages"></div>
+      <div class="inputbar" id="inputbar">
+        <div class="inputrow">
+          <button class="iconbtn" onclick="fileInput.click()" title="Dosya gonder">＋</button>
+          <input id="msgInput" placeholder="#genel kanalina mesaj yaz..." onkeydown="if(event.key==='Enter')sendMsg()">
+          <input type="file" id="fileInput" style="display:none" onchange="uploadFile()">
+        </div>
+      </div>
+
+      <!-- Arkadaslar gorunumu -->
+      <div class="friends-view" id="friendsView">
+        <h2>👥 Arkadaslar</h2>
+        <div class="add-row">
+          <input id="addFriendInput" placeholder="Kullanici adi yaz..." maxlength="32">
+          <button class="btn" onclick="addFriend()">Arkadas Ekle</button>
+        </div>
+        <div id="friendsContent"></div>
+      </div>
+
+      <!-- Video -->
+      <div class="video-area" id="videoArea"><div class="video-grid" id="videoGrid"></div></div>
+      <div class="controls" id="controls">
+        <button class="ctrl" id="btnMic" onclick="toggleMic()">🎤</button>
+        <button class="ctrl" id="btnCam" onclick="toggleCam()">📷</button>
+        <button class="ctrl" id="btnScreen" onclick="toggleScreen()">🖥️</button>
+        <button class="ctrl danger" onclick="leaveVoice()">📞</button>
+      </div>
+    </div>
+
+    <!-- SAG -->
+    <div class="members" id="members">
+      <h3>Cevrimici — <span id="onlineCount">0</span></h3>
+      <div id="memberList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROFIL GORUNTULEME MODALI -->
+<div class="modal-bg" id="profileModal" onclick="if(event.target===this)closeModal('profileModal')">
+  <div class="modal">
+    <div class="banner"></div>
+    <div class="pbody">
+      <div class="pava" id="pmAva"></div>
+      <h2 id="pmName"></h2>
+      <div class="stat" id="pmStat"></div>
+      <div class="label">Hakkinda</div>
+      <div class="bio" id="pmBio"></div>
+      <div class="row" id="pmActions"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROFIL DUZENLEME MODALI -->
+<div class="modal-bg" id="editModal" onclick="if(event.target===this)closeModal('editModal')">
+  <div class="modal">
+    <div class="banner"></div>
+    <div class="pbody">
+      <div class="pava" id="emAva" onclick="avatarInput.click()" title="Fotograf degistir"></div>
+      <div class="label" style="margin-top:8px">Profil Fotografi</div>
+      <button class="btn sec" onclick="avatarInput.click()">📷 Fotograf Yukle / Degistir</button>
+      <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar()">
+      <div class="label" style="margin-top:16px">Hakkinda (bio)</div>
+      <textarea id="emBio" maxlength="300" placeholder="Kendinden bahset..."></textarea>
+      <div class="row">
+        <button class="btn sec" onclick="closeModal('editModal')">Kapat</button>
+        <button class="btn" onclick="saveProfile()">Kaydet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ======== Durum ========
+const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let username = '';
+let currentChannel = 'genel';
+let textChannels = [], voiceChannels = [];
+let es = null, presenceVoice = {};
+let myProfile = { avatar:null, bio:'' };
+let myFriends = { friends:[], requests:[] };
+const profileCache = {};            // username -> {avatar, bio}
+const sentRequests = new Set();
+
+// Sesli
+let localStream=null, screenStream=null, currentVoiceRoom=null;
+const peers = new Map();
+const RTC_CONF = { iceServers:[{urls:'stun:stun.l.google.com:19302'}] };
+
+const $ = id => document.getElementById(id);
+const esc = s => (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initials = n => (n||'?').slice(0,2).toUpperCase();
+const avatarOf = u => (profileCache[u.toLowerCase()] && profileCache[u.toLowerCase()].avatar) || null;
+function cacheProfile(user, p){ if(user) profileCache[user.toLowerCase()] = { avatar:p&&p.avatar||null, bio:p&&p.bio||'' }; }
+
+function avaHTML(user, size){
+  const url = avatarOf(user); const s = size||40;
+  const st = url ? `width:${s}px;height:${s}px;background-image:url('${esc(url)}')`
+                 : `width:${s}px;height:${s}px;font-size:${Math.round(s*0.4)}px`;
+  return `<div class="ava" style="${st}" onclick="openProfile('${esc(user)}')">${url?'':initials(user)}</div>`;
+}
+
+// ======== Giris ========
+function enter(){
+  const v = $('nameInput').value.trim(); if(!v) return;
+  username = v;
+  $('login').style.display='none'; $('app').style.display='block';
+  $('meName').textContent = username;
+  connect();
+}
+$('nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') enter(); });
+
+// ======== SSE ========
+function connect(){
+  es = new EventSource(`/events?id=${clientId}&user=${encodeURIComponent(username)}`);
+  es.onmessage = ev => { let m; try{m=JSON.parse(ev.data);}catch(e){return;} handle(m); };
+}
+function handle(m){
+  switch(m.type){
+    case 'init':
+      textChannels=m.textChannels; voiceChannels=m.voiceChannels;
+      myProfile = m.me || myProfile; cacheProfile(username, myProfile);
+      myFriends = m.friends || myFriends;
+      refreshMe(); renderChannels(); renderMessages(m.history[currentChannel]||[]); updateReqBadge();
+      break;
+    case 'message':
+      cacheProfile(m.user, {avatar:m.avatar});
+      if(m.channel===currentChannel) appendMessage(m);
+      break;
+    case 'presence':
+      (m.users||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
+      renderMembers(m.users); presenceVoice=m.voice||{}; renderChannels();
+      break;
+    case 'profile-update':
+      cacheProfile(m.user, m.profile);
+      if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; refreshMe(); }
+      renderMembers(lastUsers); break;
+    case 'friend-request':
+      myFriends.requests = myFriends.requests || [];
+      if(!myFriends.requests.some(r=>r.toLowerCase()===m.from.toLowerCase())) myFriends.requests.push(m.from);
+      updateReqBadge(); if($('friendsView').style.display==='block') renderFriends();
+      toast(`${m.from} sana arkadaslik istegi gonderdi`); break;
+    case 'friend-accepted':
+      toast(`${m.by} arkadaslik istegini kabul etti 🎉`); break;
+    case 'friend-update':
+      myFriends = m.friends; updateReqBadge();
+      if($('friendsView').style.display==='block') renderFriends(); break;
+    case 'voice-peers': m.peers.forEach(pid=>callPeer(pid)); break;
+    case 'voice-leave': removePeer(m.id); break;
+    case 'signal': onSignal(m.from, m.signal); break;
+  }
+}
+
+function refreshMe(){
+  const url = myProfile.avatar;
+  const a = $('meAva');
+  if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; }
+  else { a.style.backgroundImage=''; a.textContent=initials(username); }
+}
+
+// ======== Kanallar ========
+function renderChannels(){
+  $('textChannels').innerHTML = textChannels.map(c=>
+    `<div class="channel ${c===currentChannel&&!inVoiceView()?'active':''}" onclick="openChannel('${c}')"># ${esc(c)}</div>`).join('');
+  $('voiceChannels').innerHTML = voiceChannels.map(c=>{
+    const mems=(presenceVoice[c]||[]).map(u=>`<div class="voice-member">${avaHTML(u.user,20)}<span onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span></div>`).join('');
+    return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">🔊 ${esc(c)}</div><div class="voice-members">${mems}</div>`;
+  }).join('');
+}
+function inVoiceView(){ return $('videoArea').style.display==='block'; }
+
+function openChannel(c){
+  currentChannel=c;
+  $('topIcon').textContent='#'; $('topName').textContent=c;
+  $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
+  $('friendsView').style.display='none';
+  $('messages').style.display='block'; $('inputbar').style.display='block';
+  renderChannels();
+  fetch('/api/history?channel='+encodeURIComponent(c)).then(r=>r.json()).then(h=>{
+    h.forEach(m=>cacheProfile(m.user,{avatar:m.avatar})); renderMessages(h);
+  }).catch(()=>{});
+  closeDrawers();
+}
+
+// ======== Mesajlar ========
+function renderMessages(list){ $('messages').innerHTML=''; list.forEach(appendMessage); }
+function appendMessage(m){
+  const time=new Date(m.ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+  let content='';
+  if(m.file){
+    content = (m.file.mime||'').startsWith('image/')
+      ? `<img class="att" src="${m.file.url}" alt="">`
+      : `<a class="file" href="${m.file.url}" download="${esc(m.file.name)}" target="_blank">📎 ${esc(m.file.name)}</a>`;
+  } else content = `<div class="text">${esc(m.text)}</div>`;
+  const el=document.createElement('div'); el.className='msg';
+  el.innerHTML = `${avaHTML(m.user,40)}<div class="body"><div class="head">
+    <span class="name" onclick="openProfile('${esc(m.user)}')">${esc(m.user)}</span>
+    <span class="time">${time}</span></div>${content}</div>`;
+  $('messages').appendChild(el);
+  $('messages').scrollTop=$('messages').scrollHeight;
+}
+function sendMsg(){
+  const t=$('msgInput').value.trim(); if(!t) return; $('msgInput').value='';
+  fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,channel:currentChannel,text:t})});
+}
+function uploadFile(){
+  const f=$('fileInput').files[0]; if(!f) return;
+  fetch('/api/upload',{method:'POST',headers:{'Content-Type':f.type||'application/octet-stream',
+    'X-Client-Id':clientId,'X-Channel':encodeURIComponent(currentChannel),'X-Filename':encodeURIComponent(f.name)},
+    body:f}).then(()=>{$('fileInput').value='';});
+}
+
+// ======== Cevrimici uyeler ========
+let lastUsers=[];
+function renderMembers(users){
+  lastUsers = users||lastUsers;
+  $('onlineCount').textContent=lastUsers.length;
+  $('memberList').innerHTML=lastUsers.map(u=>
+    `<div class="member" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}${esc(u.user)}<span class="dot"></span></div>`).join('');
+}
+
+// ======== Profil goruntuleme ========
+function openProfile(user){
+  fetch('/api/get-profile?user='+encodeURIComponent(user)).then(r=>r.json()).then(p=>{
+    cacheProfile(user, p);
+    const url=p.avatar;
+    const a=$('pmAva');
+    if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
+    $('pmName').textContent=p.user;
+    $('pmStat').textContent = p.online ? '🟢 Cevrimici' : '⚫ Cevrimdisi';
+    $('pmBio').textContent = p.bio || 'Henuz bir sey yazmamis.';
+    // aksiyon butonlari
+    const act=$('pmActions'); act.innerHTML='';
+    if(p.user.toLowerCase()===username.toLowerCase()){
+      act.innerHTML=`<button class="btn" onclick="closeModal('profileModal');openEditProfile()">Profilini Duzenle</button>`;
+    } else if(myFriends.friends.some(f=>f.toLowerCase()===p.user.toLowerCase())){
+      act.innerHTML=`<button class="btn sec" disabled>✓ Arkadassiniz</button>
+        <button class="btn danger" onclick="friendAct('remove','${esc(p.user)}')">Cikar</button>`;
+    } else if(sentRequests.has(p.user.toLowerCase())){
+      act.innerHTML=`<button class="btn sec" disabled>İstek gonderildi</button>`;
+    } else {
+      act.innerHTML=`<button class="btn" onclick="friendAct('add','${esc(p.user)}')">＋ Arkadas Ekle</button>`;
+    }
+    openModal('profileModal');
+  });
+}
+
+// ======== Profil duzenleme ========
+function openEditProfile(){
+  const a=$('emAva');
+  if(myProfile.avatar){ a.style.backgroundImage=`url('${myProfile.avatar}')`; a.textContent=''; }
+  else { a.style.backgroundImage=''; a.textContent=initials(username); }
+  $('emBio').value=myProfile.bio||'';
+  openModal('editModal'); closeDrawers();
+}
+function uploadAvatar(){
+  const f=$('avatarInput').files[0]; if(!f) return;
+  fetch('/api/avatar',{method:'POST',headers:{'Content-Type':f.type,'X-Client-Id':clientId,'X-Filename':encodeURIComponent(f.name)},body:f})
+    .then(r=>r.json()).then(d=>{
+      myProfile.avatar=d.url; cacheProfile(username,myProfile); refreshMe();
+      const a=$('emAva'); a.style.backgroundImage=`url('${d.url}')`; a.textContent='';
+      $('avatarInput').value='';
+    });
+}
+function saveProfile(){
+  myProfile.bio=$('emBio').value;
+  fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,bio:myProfile.bio})}).then(()=>closeModal('editModal'));
+}
+
+// ======== Arkadaslar ========
+function showFriends(){
+  $('messages').style.display='none'; $('inputbar').style.display='none';
+  $('videoArea').style.display='none'; $('controls').style.display='none';
+  $('friendsView').style.display='block';
+  $('topIcon').textContent='👥'; $('topName').textContent='Arkadaslar';
+  currentVoiceRoom && null;
+  renderFriends(); renderChannels(); closeDrawers();
+}
+function addFriend(){
+  const v=$('addFriendInput').value.trim(); if(!v) return;
+  $('addFriendInput').value=''; friendAct('add', v);
+}
+function friendAct(action, target){
+  if(action==='add') sentRequests.add(target.toLowerCase());
+  fetch('/api/friend',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,action,target})}).then(()=>{
+      if(action==='add') toast('İstek gonderildi: '+target);
+      closeModal('profileModal');
+    });
+}
+function renderFriends(){
+  const reqs=myFriends.requests||[], frs=myFriends.friends||[];
+  let html='';
+  if(reqs.length){
+    html+=`<div class="flist-title">Gelen İstekler — ${reqs.length}</div>`;
+    html+=reqs.map(u=>`<div class="frow">${avaHTML(u,38)}<div class="who"><div class="n">${esc(u)}</div><div class="s">arkadaslik istedi</div></div>
+      <button class="mini ok" onclick="friendAct('accept','${esc(u)}')">Kabul</button>
+      <button class="mini no" onclick="friendAct('reject','${esc(u)}')">Reddet</button></div>`).join('');
+  }
+  html+=`<div class="flist-title">Arkadaslarin — ${frs.length}</div>`;
+  html+= frs.length ? frs.map(u=>{
+    const online=lastUsers.some(x=>x.user.toLowerCase()===u.toLowerCase());
+    return `<div class="frow">${avaHTML(u,38)}<div class="who"><div class="n">${esc(u)}</div><div class="s">${online?'🟢 Cevrimici':'⚫ Cevrimdisi'}</div></div>
+      <button class="mini no" onclick="openProfile('${esc(u)}')">Profil</button></div>`;
+  }).join('') : `<div style="color:var(--muted);padding:10px">Henuz arkadasin yok. Yukaridan kullanici adi yazip ekle!</div>`;
+  $('friendsContent').innerHTML=html;
+}
+function updateReqBadge(){
+  const n=(myFriends.requests||[]).length; const b=$('reqBadge');
+  if(n>0){ b.style.display='block'; b.textContent=n; } else b.style.display='none';
+}
+
+// ======== Modallar / cekmeceler ========
+function openModal(id){ $(id).style.display='flex'; }
+function closeModal(id){ $(id).style.display='none'; }
+function toggleDrawer(id){
+  const el=$(id); const open=el.classList.toggle('open');
+  $('sidebar').classList.toggle('open', id==='sidebar' && open);
+  if(id!=='sidebar') $('sidebar').classList.remove('open');
+  if(id!=='members') $('members').classList.remove('open');
+  $('backdrop').classList.toggle('show', $('sidebar').classList.contains('open')||$('members').classList.contains('open'));
+}
+function closeDrawers(){ $('sidebar').classList.remove('open'); $('members').classList.remove('open'); $('backdrop').classList.remove('show'); }
+
+let toastTimer=null;
+function toast(msg){
+  let t=$('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast';
+    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:12px 18px;border-radius:8px;z-index:80;font-size:14px;max-width:90vw'; document.body.appendChild(t); }
+  t.textContent=msg; t.style.display='block';
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.style.display='none',3500);
+}
+
+// ======== SESLI / GORUNTULU (WebRTC mesh) ========
+async function joinVoice(room){
+  if(currentVoiceRoom===room) return;
+  if(currentVoiceRoom) await leaveVoice();
+  try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
+  catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
+  currentVoiceRoom=room;
+  $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
+  $('videoArea').style.display='block'; $('controls').style.display='flex';
+  $('topIcon').textContent='🔊'; $('topName').textContent=room;
+  $('btnMic').classList.add('on');
+  addTile('local', username+' (sen)', localStream, true);
+  renderChannels(); closeDrawers();
+  fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,action:'join',room})});
+}
+async function leaveVoice(){
+  if(!currentVoiceRoom) return;
+  fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,action:'leave',room:currentVoiceRoom})});
+  peers.forEach((pc,id)=>{pc.close();removeTile(id);}); peers.clear();
+  if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
+  if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
+  removeTile('local'); currentVoiceRoom=null;
+  $('videoArea').style.display='none'; $('controls').style.display='none';
+  ['btnCam','btnScreen'].forEach(b=>$(b).classList.remove('on'));
+  openChannel(currentChannel);
+}
+function makePeer(peerId){
+  const pc=new RTCPeerConnection(RTC_CONF);
+  localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+  pc.onicecandidate=e=>{ if(e.candidate) signal(peerId,{candidate:e.candidate}); };
+  pc.ontrack=e=>addTile(peerId, peerLabel(peerId), e.streams[0], false);
+  pc.onconnectionstatechange=()=>{ if(['failed','closed','disconnected'].includes(pc.connectionState)) removePeer(peerId); };
+  peers.set(peerId,pc); return pc;
+}
+async function callPeer(peerId){
+  const pc=makePeer(peerId);
+  const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+  signal(peerId,{sdp:pc.localDescription});
+}
+async function onSignal(from,data){
+  let pc=peers.get(from);
+  if(data.sdp){
+    if(data.sdp.type==='offer'){ if(!pc) pc=makePeer(from);
+      await pc.setRemoteDescription(data.sdp);
+      const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
+      signal(from,{sdp:pc.localDescription});
+    } else if(data.sdp.type==='answer'&&pc){ await pc.setRemoteDescription(data.sdp); }
+  } else if(data.candidate&&pc){ try{await pc.addIceCandidate(data.candidate);}catch(e){} }
+}
+function signal(to,sig){ fetch('/api/signal',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({to,from:clientId,signal:sig,room:currentVoiceRoom})}); }
+function peerLabel(id){ const l=presenceVoice[currentVoiceRoom]||[]; const u=l.find(x=>x.id===id); return u?u.user:'Arkadas'; }
+function removePeer(id){ const pc=peers.get(id); if(pc){pc.close();peers.delete(id);} removeTile(id); }
+
+function addTile(id,label,stream,muted){
+  let tile=document.getElementById('tile-'+id);
+  if(!tile){ tile=document.createElement('div'); tile.className='tile'; tile.id='tile-'+id;
+    tile.innerHTML=`<div class="novid">${initials(label)}</div><video autoplay playsinline ${muted?'muted':''}></video><div class="label">${esc(label)}</div>`;
+    $('videoGrid').appendChild(tile); }
+  tile.querySelector('video').srcObject=stream; updateTileVideo(id);
+}
+function updateTileVideo(id){
+  const tile=document.getElementById('tile-'+id); if(!tile) return;
+  const v=tile.querySelector('video');
+  const has=v.srcObject&&v.srcObject.getVideoTracks().some(t=>t.enabled&&t.readyState==='live');
+  tile.querySelector('.novid').style.display=has?'none':'flex';
+}
+function removeTile(id){ const t=document.getElementById('tile-'+id); if(t) t.remove(); }
+
+function toggleMic(){
+  if(!localStream) return; const tr=localStream.getAudioTracks()[0]; if(!tr) return;
+  tr.enabled=!tr.enabled; $('btnMic').classList.toggle('on',tr.enabled);
+  $('btnMic').textContent=tr.enabled?'🎤':'🔇';
+}
+async function toggleCam(){
+  if(!localStream) return;
+  let track=localStream.getVideoTracks()[0];
+  if(track){ track.stop(); localStream.removeTrack(track);
+    peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) pc.removeTrack(s);});
+    renegotiateAll(); $('btnCam').classList.remove('on');
+  } else { try{
+      const cam=await navigator.mediaDevices.getUserMedia({video:true});
+      const vt=cam.getVideoTracks()[0]; localStream.addTrack(vt);
+      peers.forEach(pc=>pc.addTrack(vt,localStream)); renegotiateAll(); $('btnCam').classList.add('on');
+    }catch(e){ alert('Kameraya erisilemedi: '+e.message); } }
+  document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local');
+}
+async function toggleScreen(){
+  if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; $('btnScreen').classList.remove('on');
+    peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s&&localStream.getVideoTracks()[0]) s.replaceTrack(localStream.getVideoTracks()[0]);});
+    document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local'); return; }
+  try{
+    screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+    const st=screenStream.getVideoTracks()[0]; st.onended=()=>{ if(screenStream) toggleScreen(); };
+    peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) s.replaceTrack(st); else pc.addTrack(st,screenStream);});
+    renegotiateAll();
+    document.getElementById('tile-local').querySelector('video').srcObject=screenStream; updateTileVideo('local');
+    $('btnScreen').classList.add('on');
+  }catch(e){}
+}
+let renegTimer=null;
+function renegotiateAll(){
+  clearTimeout(renegTimer);
+  renegTimer=setTimeout(()=>{ peers.forEach(async(pc,id)=>{ try{
+    const offer=await pc.createOffer(); await pc.setLocalDescription(offer); signal(id,{sdp:pc.localDescription});
+  }catch(e){} }); },150);
+}
+window.addEventListener('beforeunload',()=>{ if(currentVoiceRoom) navigator.sendBeacon('/api/voice',
+  new Blob([JSON.stringify({id:clientId,action:'leave',room:currentVoiceRoom})],{type:'application/json'})); });
+</script>
+</body>
+</html>
