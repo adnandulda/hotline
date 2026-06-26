@@ -167,6 +167,10 @@
   /* Ayar satiri (acik/kapali anahtar) */
   .setting-row{display:flex; align-items:center; justify-content:space-between; gap:10px;
     background:var(--bg3); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:14px}
+  .dev-select{width:100%; max-width:340px; padding:10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg2); color:var(--text); outline:none; font-size:14px}
+  .mic-meter{flex:1; min-width:120px; height:12px; background:var(--bg3); border-radius:6px; overflow:hidden}
+  .mic-meter #micLevel{height:100%; width:0%; background:var(--green); transition:width .05s linear}
   .switch{position:relative; width:46px; height:26px; flex-shrink:0}
   .switch input{opacity:0; width:0; height:0}
   .switch .track{position:absolute; inset:0; background:#4e5058; border-radius:26px; transition:.2s; cursor:pointer}
@@ -293,8 +297,9 @@
   .video-area{flex:1; padding:12px; background:#000; display:none; overflow:auto}
   .video-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; align-content:start}
   .tile{background:var(--bg3); border-radius:10px; overflow:hidden; position:relative; aspect-ratio:16/9}
-  .tile video{width:100%; height:100%; object-fit:cover; background:#000}
-  .tile.speaking{box-shadow:inset 0 0 0 3px var(--green)}
+  .tile video{width:100%; height:100%; object-fit:contain; background:#000}
+  .tile.speaking{box-shadow:inset 0 0 0 3px var(--green), 0 0 10px var(--green)}
+  .tile.speaking .novid{box-shadow:0 0 0 4px var(--green)}
   .tile .vol{position:absolute; top:8px; right:8px; width:84px; display:none; accent-color:var(--accent)}
   .tile:hover .vol{display:block}
   .tile .label{position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.6); padding:3px 10px; border-radius:6px; font-size:13px}
@@ -535,6 +540,7 @@
         <button class="ctrl" id="btnMic" onclick="toggleMic()" title="Mikrofon (sustur/ac)">🎤</button>
         <button class="ctrl" id="btnDeaf" onclick="toggleDeafen()" title="Sesi kapat (sagirlastir)">🎧</button>
         <button class="ctrl" id="btnCam" onclick="toggleCam()" title="Kamera ac/kapat">📷</button>
+        <button class="ctrl" onclick="switchCamera()" title="Kamera degistir (on/arka)">🔄</button>
         <button class="ctrl" id="btnScreen" onclick="toggleScreen()" title="Ekran paylas">🖥️</button>
         <button class="ctrl danger" onclick="leaveVoice()" title="Ayril">📞</button>
       </div>
@@ -655,6 +661,18 @@
     <!-- Ses & Video -->
     <div class="settings-section" id="sec-voice">
       <h1>Ses & Video</h1>
+      <div class="label">Mikrofon</div>
+      <select id="micSelect" class="dev-select" onchange="setMic(this.value)"></select>
+      <div class="label" style="margin-top:12px">Kamera</div>
+      <select id="camSelect" class="dev-select" onchange="setCam(this.value)"></select>
+      <div class="label" style="margin-top:16px">Ses & Goruntu Testi</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px">
+        <button class="btn sec" style="width:auto" onclick="toggleMicTest()">🎤 Mikrofon Testi</button>
+        <div class="mic-meter"><div id="micLevel"></div></div>
+      </div>
+      <button class="btn sec" style="width:auto" onclick="toggleCamTest()">📷 Kamera Testi</button>
+      <video id="camTest" autoplay playsinline muted style="display:none; width:100%; max-width:340px; border-radius:8px; background:#000; margin-top:8px; transform:scaleX(-1)"></video>
+      <div class="snav-sep" style="margin:16px 0"></div>
       <div class="setting-row">
         <span>🎙️ Bas-konus (PTT) — sadece tusa basiliyken mikrofon acik</span>
         <label class="switch"><input type="checkbox" id="pttToggle" onchange="togglePTT()"><span class="track"></span></label>
@@ -747,6 +765,7 @@
   <div id="callControls">
     <button class="ctrl" id="callMicBtn" onclick="toggleCallMic()" title="Mikrofon">🎤</button>
     <button class="ctrl" id="callVidBtn" onclick="toggleCallVideo()" title="Kamera">📷</button>
+    <button class="ctrl" onclick="switchCamera()" title="Kamera degistir (on/arka)">🔄</button>
     <button class="ctrl danger" onclick="endCall()" title="Aramayi bitir">📞</button>
   </div>
 </div>
@@ -808,6 +827,10 @@ const sentRequests = new Set();
 // Sesli
 let localStream=null, screenStream=null, currentVoiceRoom=null;
 let micOn=true, deafened=false, micBeforeDeafen=true;   // sesli durum
+let selectedMic = localStorage.getItem('micDev') || '';
+let selectedCam = localStorage.getItem('camDev') || '';
+function audioConstraints(){ return selectedMic ? { deviceId: { exact: selectedMic } } : true; }
+function videoConstraints(){ return selectedCam ? { deviceId: { exact: selectedCam } } : true; }
 let pttOn = localStorage.getItem('ptt')==='1';
 let pttKey = localStorage.getItem('pttKey') || 'Space';
 let pttHeld = false;
@@ -865,7 +888,7 @@ function openSettings(){
     if(d && d.email) $('stEmail').textContent=d.email;
   }).catch(()=>{});
 }
-function closeSettings(){ $('settings').classList.remove('open'); }
+function closeSettings(){ $('settings').classList.remove('open'); stopTests(); }
 function settingsTab(name){
   ['account','profile','appearance','voice','server','roles'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
@@ -875,7 +898,8 @@ function settingsTab(name){
     $('pttToggle').checked = pttOn;
     $('pttKeyRow').style.display = pttOn ? 'flex' : 'none';
     $('pttKeyLabel').textContent = keyName(pttKey);
-  }
+    populateDevices();
+  } else stopTests();
   if(name==='server'){
     $('svName').value = serverInfo.name || '';
     const a=$('svIcon');
@@ -1427,7 +1451,7 @@ function startCall(kind){
   if(!currentDM){ toast('Once bir DM ac'); return; }
   if(callState!=='idle'){ toast('Zaten bir arama var'); return; }
   callKind=kind; callWith=currentDM; callState='ringing-out'; callPeerId=null; callMicOn=true;
-  navigator.mediaDevices.getUserMedia({audio:true, video:kind==='video'}).then(stream=>{
+  navigator.mediaDevices.getUserMedia({audio:audioConstraints(), video:kind==='video'?videoConstraints():false}).then(stream=>{
     callStream=stream;
     showCallView('📞 '+callWith+' araniyor...');
     fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,to:callWith,kind,action:'ring'})});
@@ -1448,7 +1472,7 @@ function handleCall(m){
   } else if(m.action==='accept'){
     if(callState!=='ringing-out') return;
     clearTimeout(callTimeout); callPeerId=m.fromId; callState='active';
-    setCallStatus('🟢 '+callWith); startPeerAsCaller();
+    setCallStatus('🟢 '+callWith); startPeerAsCaller(); startPing();
   } else if(m.action==='decline'||m.action==='busy'){
     if(callState==='ringing-out'){ toast(callWith+(m.action==='busy'?' mesgul':' aramayi reddetti')); endCallLocal(); }
   } else if(m.action==='cancel'){
@@ -1462,10 +1486,10 @@ function acceptCall(){
   stopRing(); $('incomingCall').classList.remove('show');
   const inc=incoming; incoming=null;
   callKind=inc.kind; callWith=inc.from; callPeerId=inc.fromId; callState='active'; callMicOn=true;
-  navigator.mediaDevices.getUserMedia({audio:true, video:inc.kind==='video'}).then(stream=>{
+  navigator.mediaDevices.getUserMedia({audio:audioConstraints(), video:inc.kind==='video'?videoConstraints():false}).then(stream=>{
     callStream=stream;
     fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:inc.fromId,action:'accept'})});
-    showCallView('🟢 '+callWith); attachCallLocal();
+    showCallView('🟢 '+callWith); attachCallLocal(); startPing();
   }).catch(()=>{ toast('Mikrofon/kamera acilamadi'); fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:inc.fromId,action:'decline'})}); callState='idle'; });
 }
 function declineCall(){
@@ -1504,7 +1528,7 @@ function endCall(){
   endCallLocal();
 }
 function endCallLocal(){
-  clearTimeout(callTimeout); stopRing();
+  clearTimeout(callTimeout); stopRing(); stopPing();
   if(callPC){ try{callPC.close();}catch(e){} callPC=null; }
   if(callStream){ callStream.getTracks().forEach(t=>t.stop()); callStream=null; }
   callWith=null; callPeerId=null; callState='idle'; incoming=null;
@@ -1531,7 +1555,7 @@ async function toggleCallVideo(){
   if(!callStream || !callPC) return;
   let track=callStream.getVideoTracks()[0];
   if(track){ track.stop(); callStream.removeTrack(track); const s=callPC.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) callPC.removeTrack(s); }
-  else { try{ const cam=await navigator.mediaDevices.getUserMedia({video:true}); const vt=cam.getVideoTracks()[0]; callStream.addTrack(vt); callPC.addTrack(vt,callStream); }catch(e){ toast('Kamera acilamadi'); return; } }
+  else { try{ const cam=await navigator.mediaDevices.getUserMedia({video:videoConstraints()}); const vt=cam.getVideoTracks()[0]; callStream.addTrack(vt); callPC.addTrack(vt,callStream); }catch(e){ toast('Kamera acilamadi'); return; } }
   // yeniden teklif
   try{ const offer=await callPC.createOffer(); await callPC.setLocalDescription(offer); callSignal({sdp:callPC.localDescription}); }catch(e){}
   attachCallLocal();
@@ -1932,7 +1956,7 @@ async function joinVoice(room){
   if(!currentServer) return;
   if(currentVoiceRoom===room){ showVoiceView(); closeDrawers(); return; }   // zaten baglisin -> goruntuye don
   if(currentVoiceRoom) await leaveVoice();
-  try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
+  try{ localStream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints(),video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
   currentDM=null; currentVoiceRoom=room; voiceServer=currentServer;
   applyMic(); applyRemoteAudio(); updateVoiceBtns();   // onceki mute/deafen tercihini koru
@@ -1942,10 +1966,11 @@ async function joinVoice(room){
   sfx('join');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,server:voiceServer,action:'join',room})});
+  startPing();
 }
 async function leaveVoice(){
   if(!currentVoiceRoom) return;
-  sfx('leave');
+  sfx('leave'); stopPing();
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,server:voiceServer,action:'leave',room:currentVoiceRoom})});
   peers.forEach((pc,id)=>{pc.close();removeTile(id);}); peers.clear();
@@ -2053,10 +2078,11 @@ function watchSpeaking(tileId, stream){
     if(speakAnalysers.has(tileId)) return;   // zaten izleniyor
     if(!stream || !stream.getAudioTracks().length) return;
     _actx = _actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(_actx.state==='suspended') _actx.resume();
     const src=_actx.createMediaStreamSource(stream);
-    const an=_actx.createAnalyser(); an.fftSize=512; an.smoothingTimeConstant=0.6;
+    const an=_actx.createAnalyser(); an.fftSize=1024;
     src.connect(an);
-    speakAnalysers.set(tileId, { analyser:an, data:new Uint8Array(an.frequencyBinCount), src });
+    speakAnalysers.set(tileId, { analyser:an, data:new Uint8Array(an.fftSize), src });
     if(!speakRAF) speakingLoop();
   }catch(e){}
 }
@@ -2067,13 +2093,96 @@ function unwatchSpeaking(tileId){
 }
 function speakingLoop(){
   speakAnalysers.forEach((a,id)=>{
-    a.analyser.getByteFrequencyData(a.data);
-    let sum=0; for(let i=0;i<a.data.length;i++) sum+=a.data[i];
-    const avg=sum/a.data.length;
+    a.analyser.getByteTimeDomainData(a.data);   // zaman alani RMS = konusma algilama
+    let sum=0; for(let i=0;i<a.data.length;i++){ const v=(a.data[i]-128)/128; sum+=v*v; }
+    const rms=Math.sqrt(sum/a.data.length);
     const tile=document.getElementById('tile-'+id);
-    if(tile) tile.classList.toggle('speaking', avg>11);
+    // yerel: sadece gercekten ses gidiyorsa (mute/ptt degilse)
+    const live = id!=='local' || micEnabled();
+    if(tile) tile.classList.toggle('speaking', live && rms>0.045);
   });
   speakRAF=requestAnimationFrame(speakingLoop);
+}
+
+// --- Ping (gecikme/RTT) ---
+let pingTimer=null;
+function startPing(){ stopPing(); updatePing(); pingTimer=setInterval(updatePing,2000); }
+function stopPing(){ if(pingTimer){ clearInterval(pingTimer); pingTimer=null; } }
+async function updatePing(){
+  const pc = (callState==='active' && callPC) ? callPC : (peers.size ? [...peers.values()][0] : null);
+  if(!pc){ if(currentVoiceRoom) $('vsRoom').textContent=currentVoiceRoom; return; }
+  try{
+    const stats=await pc.getStats(); let rtt=null;
+    stats.forEach(r=>{ if(r.type==='candidate-pair' && typeof r.currentRoundTripTime==='number' && (r.nominated||r.state==='succeeded')) rtt=r.currentRoundTripTime; });
+    if(rtt==null) return;
+    const ms=Math.round(rtt*1000), q = ms<80?'🟢':ms<160?'🟡':'🔴';
+    if(currentVoiceRoom) $('vsRoom').textContent = currentVoiceRoom+' · '+q+' '+ms+'ms';
+    if(callState==='active') $('callStatusText').textContent = '🟢 '+callWith+'  ·  '+ms+'ms';
+  }catch(e){}
+}
+
+// --- Kamera degistir (on/arka) ---
+async function switchCamera(){
+  const inCall = callState==='active' && callPC;
+  const stream = inCall ? callStream : localStream;
+  const pcs = inCall ? [callPC] : [...peers.values()];
+  if(!stream || !stream.getVideoTracks().length){ toast('Once kamerayi ac'); return; }
+  try{
+    const devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    if(devs.length<2){ toast('Baska kamera bulunamadi'); return; }
+    const cur=stream.getVideoTracks()[0].getSettings().deviceId;
+    const idx=Math.max(0,devs.findIndex(d=>d.deviceId===cur));
+    const next=devs[(idx+1)%devs.length];
+    selectedCam=next.deviceId; localStorage.setItem('camDev',selectedCam);
+    const cam=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:next.deviceId}}});
+    const vt=cam.getVideoTracks()[0];
+    const old=stream.getVideoTracks()[0]; old.stop(); stream.removeTrack(old); stream.addTrack(vt);
+    pcs.forEach(pc=>{ const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) s.replaceTrack(vt); });
+    const lv = inCall ? $('callLocalVideo') : (document.getElementById('tile-local')&&document.getElementById('tile-local').querySelector('video'));
+    if(lv) lv.srcObject=stream;
+    toast('Kamera degistirildi');
+  }catch(e){ toast('Kamera degistirilemedi'); }
+}
+
+// --- Cihaz secimi + test (Ayarlar > Ses & Video) ---
+async function populateDevices(){
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const mics=devs.filter(d=>d.kind==='audioinput'), cams=devs.filter(d=>d.kind==='videoinput');
+    const fill=(sel,list,cur,word)=>{ const e=$(sel); if(!e) return;
+      e.innerHTML='<option value="">Varsayilan</option>'+list.map((d,i)=>`<option value="${d.deviceId}" ${d.deviceId===cur?'selected':''}>${esc(d.label||(word+' '+(i+1)))}</option>`).join(''); };
+    fill('micSelect',mics,selectedMic,'Mikrofon'); fill('camSelect',cams,selectedCam,'Kamera');
+  }catch(e){}
+}
+function setMic(v){ selectedMic=v; localStorage.setItem('micDev',v); }
+function setCam(v){ selectedCam=v; localStorage.setItem('camDev',v); }
+let testStream=null, testRAF=null;
+function stopTests(){
+  if(testStream){ testStream.getTracks().forEach(t=>t.stop()); testStream=null; }
+  if(testRAF){ cancelAnimationFrame(testRAF); testRAF=null; }
+  const cv=$('camTest'); if(cv){ cv.srcObject=null; cv.style.display='none'; }
+  const ml=$('micLevel'); if(ml) ml.style.width='0%';
+}
+async function toggleMicTest(){
+  if(testStream && testStream.getAudioTracks().length){ stopTests(); return; }
+  stopTests();
+  try{
+    testStream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints()});
+    _actx=_actx||new(window.AudioContext||window.webkitAudioContext)(); if(_actx.state==='suspended') _actx.resume();
+    const src=_actx.createMediaStreamSource(testStream); const an=_actx.createAnalyser(); an.fftSize=1024; src.connect(an);
+    const data=new Uint8Array(an.fftSize);
+    const loop=()=>{ an.getByteTimeDomainData(data); let s=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; s+=v*v; }
+      const rms=Math.sqrt(s/data.length); $('micLevel').style.width=Math.min(100,Math.round(rms*350))+'%'; testRAF=requestAnimationFrame(loop); };
+    loop(); toast('Konus, cubuk hareket etmeli'); populateDevices();
+  }catch(e){ toast('Mikrofon acilamadi'); }
+}
+async function toggleCamTest(){
+  if(testStream && testStream.getVideoTracks().length){ stopTests(); return; }
+  stopTests();
+  try{
+    testStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints()});
+    const cv=$('camTest'); cv.srcObject=testStream; cv.style.display='block'; populateDevices();
+  }catch(e){ toast('Kamera acilamadi'); }
 }
 function toggleMic(){
   if(deafened){ deafened=false; applyRemoteAudio(); micOn=micBeforeDeafen; } // mute'a basinca sagirlik kalkar
@@ -2115,7 +2224,7 @@ async function toggleCam(){
     peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) pc.removeTrack(s);});
     renegotiateAll(); $('btnCam').classList.remove('on');
   } else { try{
-      const cam=await navigator.mediaDevices.getUserMedia({video:true});
+      const cam=await navigator.mediaDevices.getUserMedia({video:videoConstraints()});
       const vt=cam.getVideoTracks()[0]; localStream.addTrack(vt);
       peers.forEach(pc=>pc.addTrack(vt,localStream)); renegotiateAll(); $('btnCam').classList.add('on');
     }catch(e){ alert('Kameraya erisilemedi: '+e.message); } }
