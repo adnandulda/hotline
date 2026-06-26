@@ -30,6 +30,10 @@
   #login input{width:100%; padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg3);
     color:var(--text); margin-bottom:14px; outline:none}
   #login input:focus{border-color:var(--accent)}
+  .auth-err{color:var(--red); font-size:13px; min-height:18px; margin-bottom:10px; text-align:left}
+  .auth-switch{margin-top:16px; font-size:14px; color:var(--muted)}
+  .auth-switch a{color:var(--accent2); cursor:pointer; font-weight:600}
+  .auth-switch a:hover{text-decoration:underline}
   .btn{background:var(--accent); color:#fff; border:none; padding:13px 18px; border-radius:12px;
     font-size:15px; cursor:pointer; width:100%; transition:.15s; font-weight:500}
   .btn:hover{background:var(--accent2)}
@@ -156,9 +160,27 @@
 <div id="login">
   <div class="box">
     <h1>🎮 Bizim Discord</h1>
-    <p>Bir kullanici adi yaz ve gir</p>
-    <input id="nameInput" placeholder="Kullanici adin..." maxlength="32" autofocus>
-    <button class="btn" onclick="enter()">Gir</button>
+
+    <!-- Giris formu -->
+    <div id="loginForm">
+      <p>Hesabina giris yap</p>
+      <input id="loginEmail" type="email" placeholder="E-posta" autocomplete="email">
+      <input id="loginPass" type="password" placeholder="Sifre" autocomplete="current-password">
+      <div class="auth-err" id="loginErr"></div>
+      <button class="btn" onclick="doLogin()">Giris Yap</button>
+      <p class="auth-switch">Hesabin yok mu? <a onclick="showAuth('register')">Kayit ol</a></p>
+    </div>
+
+    <!-- Kayit formu -->
+    <div id="registerForm" style="display:none">
+      <p>Yeni hesap olustur</p>
+      <input id="regName" placeholder="Kullanici adin" maxlength="32" autocomplete="username">
+      <input id="regEmail" type="email" placeholder="E-posta" autocomplete="email">
+      <input id="regPass" type="password" placeholder="Sifre (en az 6 karakter)" autocomplete="new-password">
+      <div class="auth-err" id="regErr"></div>
+      <button class="btn" onclick="doRegister()">Kayit Ol</button>
+      <p class="auth-switch">Zaten hesabin var mi? <a onclick="showAuth('login')">Giris yap</a></p>
+    </div>
   </div>
 </div>
 
@@ -261,6 +283,7 @@
         <button class="btn sec" onclick="closeModal('editModal')">Kapat</button>
         <button class="btn" onclick="saveProfile()">Kaydet</button>
       </div>
+      <button class="btn danger" style="margin-top:10px" onclick="logout()">🚪 Cikis Yap</button>
     </div>
   </div>
 </div>
@@ -269,6 +292,7 @@
 // ======== Durum ========
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 let username = '';
+let token = localStorage.getItem('token') || '';
 let currentChannel = 'genel';
 let textChannels = [], voiceChannels = [];
 let es = null, presenceVoice = {};
@@ -295,19 +319,67 @@ function avaHTML(user, size){
   return `<div class="ava" style="${st}" onclick="openProfile('${esc(user)}')">${url?'':initials(user)}</div>`;
 }
 
-// ======== Giris ========
-function enter(){
-  const v = $('nameInput').value.trim(); if(!v) return;
-  username = v;
+// ======== Giris / Kayit ========
+function showAuth(which){
+  $('loginForm').style.display = which==='login' ? 'block' : 'none';
+  $('registerForm').style.display = which==='register' ? 'block' : 'none';
+  $('loginErr').textContent=''; $('regErr').textContent='';
+}
+function startSession(t, name){
+  token = t; username = name;
+  localStorage.setItem('token', token);
+  localStorage.setItem('username', username);
   $('login').style.display='none'; $('app').style.display='block';
   $('meName').textContent = username;
   connect();
 }
-$('nameInput').addEventListener('keydown', e=>{ if(e.key==='Enter') enter(); });
+async function doLogin(){
+  const email=$('loginEmail').value.trim(), password=$('loginPass').value;
+  const err=$('loginErr'); err.textContent='';
+  if(!email || !password){ err.textContent='E-posta ve sifre gir'; return; }
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password})});
+    const d=await r.json();
+    if(!r.ok){ err.textContent=d.error||'Giris basarisiz'; return; }
+    startSession(d.token, d.username);
+  }catch(e){ err.textContent='Baglanti hatasi'; }
+}
+async function doRegister(){
+  const username=$('regName').value.trim(), email=$('regEmail').value.trim(), password=$('regPass').value;
+  const err=$('regErr'); err.textContent='';
+  if(!username || !email || !password){ err.textContent='Tum alanlari doldur'; return; }
+  try{
+    const r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username,email,password})});
+    const d=await r.json();
+    if(!r.ok){ err.textContent=d.error||'Kayit basarisiz'; return; }
+    startSession(d.token, d.username);
+  }catch(e){ err.textContent='Baglanti hatasi'; }
+}
+async function logout(){
+  try{ await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}); }catch(e){}
+  localStorage.removeItem('token'); localStorage.removeItem('username');
+  location.reload();
+}
+// Sayfa acilinca kayitli oturum varsa otomatik gir
+async function tryAutoLogin(){
+  if(!token) return;
+  try{
+    const r=await fetch('/api/session?token='+encodeURIComponent(token));
+    if(!r.ok){ localStorage.removeItem('token'); return; }
+    const d=await r.json();
+    startSession(token, d.username);
+  }catch(e){}
+}
+// Enter tusu ile gonder
+['loginEmail','loginPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); }));
+['regName','regEmail','regPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doRegister(); }));
+tryAutoLogin();
 
 // ======== SSE ========
 function connect(){
-  es = new EventSource(`/events?id=${clientId}&user=${encodeURIComponent(username)}`);
+  es = new EventSource(`/events?id=${clientId}&token=${encodeURIComponent(token)}`);
   es.onmessage = ev => { let m; try{m=JSON.parse(ev.data);}catch(e){return;} handle(m); };
 }
 function handle(m){

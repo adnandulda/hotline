@@ -24,12 +24,35 @@ const VOICE_CHANNELS = ['Sesli Oda 1', 'Sesli Oda 2', 'Oyun Odasi'];
 // --- Kalici kayit (dosyaya yazilir, sunucu kapansa da kalir) ---
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const FRIENDS_FILE  = path.join(DATA_DIR, 'friends.json');
+const USERS_FILE    = path.join(DATA_DIR, 'users.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 function loadJSON(f, def){ try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch(e){ return def; } }
 function saveJSON(f, obj){ try { fs.writeFileSync(f, JSON.stringify(obj)); } catch(e){} }
 let profiles = loadJSON(PROFILES_FILE, {});   // username -> { avatar, bio }
 let friends  = loadJSON(FRIENDS_FILE, {});    // username -> { friends:[], requests:[] }
+let users    = loadJSON(USERS_FILE, {});      // email -> { username, salt, hash, created }
+let sessions = loadJSON(SESSIONS_FILE, {});   // token -> username
 
 const key = u => (u||'').toLowerCase();
+
+// --- Hesap / oturum yardimcilari ---
+function hashPassword(password, salt){
+  return crypto.scryptSync(String(password), salt, 64).toString('hex');
+}
+function usernameTaken(username){
+  const k = key(username);
+  return Object.values(users).some(u => key(u.username) === k);
+}
+function createSession(username){
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions[token] = username;
+  saveJSON(SESSIONS_FILE, sessions);
+  return token;
+}
+function userFromToken(token){
+  return token && sessions[token] ? sessions[token] : null;
+}
+const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 function getProfile(user){
   const p = profiles[key(user)] || {};
   return { user, avatar: p.avatar || null, bio: p.bio || '' };
@@ -99,11 +122,68 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const p = url.pathname;
 
+  // ---------- Kayit ol ----------
+  if (p === '/api/register' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const username = String(data.username || '').trim().slice(0, 32);
+      const email = String(data.email || '').trim().toLowerCase();
+      const password = String(data.password || '');
+      const fail = (msg) => { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: msg })); };
+      if (!username) return fail('Kullanici adi gerekli');
+      if (!isEmail(email)) return fail('Gecerli bir e-posta gir');
+      if (password.length < 6) return fail('Sifre en az 6 karakter olmali');
+      if (users[email]) return fail('Bu e-posta zaten kayitli');
+      if (usernameTaken(username)) return fail('Bu kullanici adi alinmis');
+      const salt = crypto.randomBytes(16).toString('hex');
+      users[email] = { username, salt, hash: hashPassword(password, salt), created: Date.now() };
+      saveJSON(USERS_FILE, users);
+      getFriendData(username); // kayit olustur
+      const token = createSession(username);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token, username }));
+    });
+  }
+
+  // ---------- Giris yap ----------
+  if (p === '/api/login' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const email = String(data.email || '').trim().toLowerCase();
+      const password = String(data.password || '');
+      const fail = () => { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'E-posta veya sifre hatali' })); };
+      const u = users[email];
+      if (!u) return fail();
+      const hash = hashPassword(password, u.salt);
+      const ok = hash.length === u.hash.length &&
+                 crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(u.hash));
+      if (!ok) return fail();
+      const token = createSession(u.username);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token, username: u.username }));
+    });
+  }
+
+  // ---------- Cikis yap ----------
+  if (p === '/api/logout' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      if (data.token && sessions[data.token]){ delete sessions[data.token]; saveJSON(SESSIONS_FILE, sessions); }
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Oturum dogrula (token -> kullanici) ----------
+  if (p === '/api/session'){
+    const user = userFromToken(url.searchParams.get('token'));
+    if (!user){ res.writeHead(401); return res.end('gecersiz'); }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ username: user }));
+  }
+
   // ---------- SSE ----------
   if (p === '/events'){
     const clientId = url.searchParams.get('id');
-    const user = (url.searchParams.get('user') || 'Misafir').slice(0, 32);
+    const user = userFromToken(url.searchParams.get('token'));
     if (!clientId){ res.writeHead(400); return res.end('id gerekli'); }
+    if (!user){ res.writeHead(401); return res.end('once giris yap'); }
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
     res.write('retry: 3000\n\n');
     clients.set(clientId, { res, user });
