@@ -47,7 +47,25 @@
   /* Sol kanal cubugu */
   .sidebar{width:240px; background:var(--bg2); display:flex; flex-direction:column; flex-shrink:0; z-index:30;
     border-right:1px solid var(--border)}
-  .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif)}
+  .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
+    display:flex; align-items:center; gap:9px}
+  .rec-dot{width:12px; height:12px; border-radius:50%; background:#ff3b30; flex-shrink:0;
+    box-shadow:0 0 8px 2px rgba(255,59,48,.7); animation:recPulse 1.5s ease-in-out infinite}
+  @keyframes recPulse{
+    0%,100%{opacity:1; box-shadow:0 0 9px 3px rgba(255,59,48,.75); transform:scale(1)}
+    50%{opacity:.25; box-shadow:0 0 2px 0 rgba(255,59,48,.12); transform:scale(.82)}
+  }
+  .rec-dot.steady{animation:none; opacity:1; box-shadow:0 0 7px 2px rgba(255,59,48,.55); transform:none}
+  /* Ayar satiri (acik/kapali anahtar) */
+  .setting-row{display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--bg3); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:14px}
+  .switch{position:relative; width:46px; height:26px; flex-shrink:0}
+  .switch input{opacity:0; width:0; height:0}
+  .switch .track{position:absolute; inset:0; background:#4e5058; border-radius:26px; transition:.2s; cursor:pointer}
+  .switch .track::before{content:''; position:absolute; width:20px; height:20px; left:3px; top:3px;
+    background:#fff; border-radius:50%; transition:.2s}
+  .switch input:checked + .track{background:var(--accent)}
+  .switch input:checked + .track::before{transform:translateX(20px)}
   .scroll{flex:1; overflow-y:auto}
   .nav-btn{margin:8px; padding:11px; border-radius:10px; background:#302e2a; color:var(--text); cursor:pointer;
     display:flex; align-items:center; gap:8px; font-size:14px; position:relative}
@@ -191,7 +209,7 @@
 
     <!-- SOL -->
     <div class="sidebar" id="sidebar">
-      <div class="server-name">🎮 Bizim Sunucu</div>
+      <div class="server-name"><span class="rec-dot" id="recDot"></span>SUICIDEHOTLINE</div>
       <div class="scroll">
         <div class="nav-btn" onclick="showFriends()">👥 Arkadaslar <span class="badge" id="reqBadge" style="display:none">0</span></div>
         <div class="ch-group">Yazi Kanallari</div>
@@ -279,6 +297,14 @@
       <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar()">
       <div class="label" style="margin-top:16px">Hakkinda (bio)</div>
       <textarea id="emBio" maxlength="300" placeholder="Kendinden bahset..."></textarea>
+      <div class="label">Gorunum</div>
+      <div class="setting-row">
+        <span>🔴 REC yanip sonmesi</span>
+        <label class="switch">
+          <input type="checkbox" id="recBlinkToggle" onchange="toggleRecBlink()">
+          <span class="track"></span>
+        </label>
+      </div>
       <div class="row">
         <button class="btn sec" onclick="closeModal('editModal')">Kapat</button>
         <button class="btn" onclick="saveProfile()">Kaydet</button>
@@ -318,6 +344,18 @@ function avaHTML(user, size){
                  : `width:${s}px;height:${s}px;font-size:${Math.round(s*0.4)}px`;
   return `<div class="ava" style="${st}" onclick="openProfile('${esc(user)}')">${url?'':initials(user)}</div>`;
 }
+
+// ======== REC yanip sonme ayari ========
+function applyRecBlink(){
+  const on = localStorage.getItem('recBlink') !== 'off';   // varsayilan: acik
+  const dot = $('recDot'); if(dot) dot.classList.toggle('steady', !on);
+  const t = $('recBlinkToggle'); if(t) t.checked = on;
+}
+function toggleRecBlink(){
+  localStorage.setItem('recBlink', $('recBlinkToggle').checked ? 'on' : 'off');
+  applyRecBlink();
+}
+applyRecBlink();
 
 // ======== Giris / Kayit ========
 function showAuth(which){
