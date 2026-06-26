@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const tls = require('tls');
+const https = require('https');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -64,24 +65,63 @@ const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 const MAIL_FILE = path.join(DATA_DIR, 'mail-config.json');
 function mailConfig(){
   const f = loadJSON(MAIL_FILE, {});
+  const user = process.env.GMAIL_USER || f.user || '';
   return {
-    user: process.env.GMAIL_USER || f.user || '',
+    // Gmail SMTP (localhost icin)
+    user,
     pass: process.env.GMAIL_PASS || f.pass || '',
-    fromName: process.env.GMAIL_FROM_NAME || f.fromName || 'Bizim Discord'
+    fromName: process.env.GMAIL_FROM_NAME || f.fromName || 'Bizim Discord',
+    // Brevo HTTP API (Railway gibi SMTP engelli hostlar icin)
+    brevoKey: process.env.BREVO_API_KEY || f.brevoKey || '',
+    // Gonderen adres: Brevo'da DOGRULANMIS olmali. Yoksa Gmail adresine duser.
+    fromEmail: process.env.MAIL_FROM || f.fromEmail || user
   };
 }
-// Mail ayarli mi? Degilse "test modu": kod sadece sunucu konsoluna yazilir.
-function mailReady(){ const c = mailConfig(); return !!(c.user && c.pass); }
+// Hangi yontem aktif? 'brevo' | 'gmail' | null (test modu)
+function mailMode(){ const c = mailConfig(); if (c.brevoKey) return 'brevo'; if (c.user && c.pass) return 'gmail'; return null; }
+function mailReady(){ return mailMode() !== null; }
 
 function sendMail({ to, subject, text }, done){
   const cfg = mailConfig();
-  if (!cfg.user || !cfg.pass){
-    console.log('\n========== [MAIL TEST MODU] ==========');
-    console.log('Alici: ' + to);
-    console.log(text);
-    console.log('======================================\n');
-    return done(null, { consoleOnly: true });
-  }
+  const mode = mailMode();
+  if (mode === 'brevo') return sendViaBrevo(cfg, { to, subject, text }, done);
+  if (mode === 'gmail') return sendViaGmail(cfg, { to, subject, text }, done);
+  // Test modu: ayar yok -> kodu sadece konsola yaz
+  console.log('\n========== [MAIL TEST MODU] ==========');
+  console.log('Alici: ' + to);
+  console.log(text);
+  console.log('======================================\n');
+  return done(null, { consoleOnly: true });
+}
+
+// --- Brevo: HTTPS (443) uzerinden, hicbir host engellemez ---
+function sendViaBrevo(cfg, { to, subject, text }, done){
+  const payload = JSON.stringify({
+    sender: { name: cfg.fromName, email: cfg.fromEmail },
+    to: [{ email: to }],
+    subject: subject,
+    textContent: text
+  });
+  const req = https.request({
+    host: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
+    headers: { 'api-key': cfg.brevoKey, 'content-type': 'application/json',
+      'accept': 'application/json', 'content-length': Buffer.byteLength(payload) }
+  }, (resp) => {
+    let body = '';
+    resp.on('data', d => body += d);
+    resp.on('end', () => {
+      if (resp.statusCode >= 200 && resp.statusCode < 300) return done(null, {});
+      console.error('[BREVO HATA] ' + resp.statusCode + ' ' + body);
+      done(new Error('Brevo ' + resp.statusCode));
+    });
+  });
+  req.on('error', (e) => { console.error('[BREVO BAGLANTI HATASI] ' + e.message); done(e); });
+  req.setTimeout(15000, () => req.destroy(new Error('Brevo zaman asimi')));
+  req.write(payload); req.end();
+}
+
+// --- Gmail: dogrudan SMTP (sadece SMTP'ye izin veren ortamlarda, ornegin localhost) ---
+function sendViaGmail(cfg, { to, subject, text }, done){
   const enc = s => Buffer.from(String(s), 'utf8').toString('base64');
   let body = String(text).replace(/\r?\n/g, '\r\n').replace(/\r\n\./g, '\r\n..');
   if (body[0] === '.') body = '.' + body;
@@ -220,7 +260,7 @@ const server = http.createServer((req, res) => {
         subject: 'Bizim Discord dogrulama kodun',
         text: `Merhaba ${username},\n\nHesabini dogrulamak icin kodun: ${code}\n\nBu kod 10 dakika gecerlidir. Sen istemediysen bu mesaji yok say.`
       }, (err, info) => {
-        if (err){ pending.delete(email); res.writeHead(500, { 'Content-Type': 'application/json' });
+        if (err){ console.error('[KAYIT MAIL HATASI] ' + err.message); pending.delete(email); res.writeHead(500, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: 'Mail gonderilemedi, biraz sonra tekrar dene' })); }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ pending: true, email, devCode: info && info.consoleOnly ? code : undefined }));
@@ -482,8 +522,11 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  Ayni wifi-deki telefon/PC:  http://<BU-BILGISAYARIN-IP>:' + PORT);
   console.log('  (IP ogrenmek icin Windows-ta cmd-ye: ipconfig)');
   console.log('  Durdurmak icin:  Ctrl + C');
-  if (mailReady()){
-    console.log('  📧 Mail: AYARLI (' + mailConfig().user + ') — kodlar mail ile gidecek');
+  const _mc = mailConfig();
+  if (mailMode() === 'brevo'){
+    console.log('  📧 Mail: BREVO API (gonderen: ' + _mc.fromEmail + ') — kodlar mail ile gidecek');
+  } else if (mailMode() === 'gmail'){
+    console.log('  📧 Mail: GMAIL SMTP (' + _mc.user + ') — kodlar mail ile gidecek');
   } else {
     console.log('  📧 Mail: AYARLANMAMIS (TEST MODU) — kodlar sadece bu ekrana yazilir');
   }
