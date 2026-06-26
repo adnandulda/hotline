@@ -703,8 +703,27 @@ const server = http.createServer((req, res) => {
   // ---------- WebRTC signaling ----------
   if (p === '/api/signal' && req.method === 'POST'){
     return readJSON(req, (data) => {
-      const { to, from, signal, room, server: sid } = data;
-      if (clients.has(to)) sendTo(to, { type:'signal', from, signal, room, server:sid });
+      const { to, from, signal, room, server: sid, call } = data;
+      if (clients.has(to)) sendTo(to, { type:'signal', from, signal, room, server:sid, call });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- DM arama (sesli/goruntulu) sinyalleri ----------
+  if (p === '/api/call' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id); if (!c){ res.writeHead(401); return res.end(); }
+      const act = data.action;
+      if (act === 'ring'){
+        const to = String(data.to||'').trim();
+        if (to) sendToUser(to, { type:'call', action:'ring', from:c.user, fromId:data.id, kind: data.kind==='video'?'video':'voice' });
+      } else if (act === 'cancel'){
+        const to = String(data.to||'').trim();
+        if (to) sendToUser(to, { type:'call', action:'cancel', from:c.user });
+      } else if (['accept','decline','end','busy'].includes(act)){
+        const toId = data.toId;
+        if (toId && clients.has(toId)) sendTo(toId, { type:'call', action:act, from:c.user, fromId:data.id, kind:data.kind });
+      }
       res.writeHead(200); res.end('ok');
     });
   }

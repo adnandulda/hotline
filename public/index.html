@@ -120,6 +120,24 @@
   /* Rol etiketleri */
   .role-chip{border:1px solid var(--border); border-radius:12px; padding:3px 10px; font-size:12px; cursor:pointer; color:var(--text); opacity:.65; user-select:none}
   .role-chip.on{opacity:1; font-weight:600}
+  /* DM arama */
+  .top-call{background:none; border:none; color:var(--muted); font-size:18px; cursor:pointer; padding:4px 6px}
+  .top-call:hover{color:var(--text)}
+  #incomingCall{position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:90}
+  #incomingCall.show{display:flex}
+  .inc-card{background:var(--bg2); border:1px solid var(--border); border-radius:16px; padding:28px 32px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.6)}
+  .call-btn{width:60px; height:60px; border-radius:50%; border:none; color:#fff; font-size:24px; cursor:pointer}
+  .call-btn.green{background:var(--green)} .call-btn.red{background:var(--red); transform:rotate(135deg)}
+  #callView{position:fixed; inset:0; background:#000; display:none; z-index:88}
+  #callView.show{display:block}
+  #callRemoteVideo{width:100%; height:100%; object-fit:contain; background:#000}
+  #callNoVideo{position:absolute; inset:0; display:flex; align-items:center; justify-content:center}
+  #callTop{position:absolute; top:0; left:0; right:0; padding:18px; text-align:center; font-size:17px; font-weight:600;
+    background:linear-gradient(rgba(0,0,0,.5),transparent)}
+  #callLocalVideo{position:absolute; bottom:100px; right:16px; width:180px; max-width:40vw; border-radius:10px;
+    background:#1e1f22; object-fit:cover; aspect-ratio:16/9; border:1px solid #000; display:none}
+  #callLocalVideo.show{display:block}
+  #callControls{position:absolute; bottom:24px; left:0; right:0; display:flex; gap:14px; justify-content:center}
   /* Kullanici profil pop-out'u */
   .popout{position:fixed; width:300px; max-width:92vw; background:#232428; border-radius:10px; z-index:80; display:none;
     box-shadow:0 8px 30px rgba(0,0,0,.6); overflow:hidden}
@@ -461,6 +479,8 @@
         <button class="menu-btn" onclick="toggleDrawer('sidebar')">☰</button>
         <span id="topIcon">#</span>
         <span class="title" id="topName">genel</span>
+        <button class="top-call" id="dmCallVoice" onclick="startCall('voice')" title="Sesli ara" style="display:none">📞</button>
+        <button class="top-call" id="dmCallVideo" onclick="startCall('video')" title="Goruntulu ara" style="display:none">📹</button>
         <button class="ppl-btn" onclick="toggleDrawer('members')">👥</button>
       </div>
 
@@ -687,6 +707,32 @@
 
 <!-- Emoji secici (tepki + mesaj kutusu) -->
 <div class="emoji-pop" id="emojiPop"></div>
+
+<!-- GELEN ARAMA -->
+<div id="incomingCall">
+  <div class="inc-card">
+    <div class="ava" id="incAva" style="width:90px;height:90px;font-size:34px;margin:0 auto 14px"></div>
+    <div id="incName" style="font-size:20px;font-weight:700"></div>
+    <div id="incKind" style="color:var(--muted);margin:4px 0 20px">Sesli arama...</div>
+    <div style="display:flex;gap:12px;justify-content:center">
+      <button class="call-btn green" onclick="acceptCall()" title="Kabul">✅</button>
+      <button class="call-btn red" onclick="declineCall()" title="Reddet">📞</button>
+    </div>
+  </div>
+</div>
+
+<!-- ARAMA GORUNUMU -->
+<div id="callView">
+  <video id="callRemoteVideo" autoplay playsinline></video>
+  <div id="callNoVideo"><div class="ava" id="callRemoteAva" style="width:120px;height:120px;font-size:46px"></div></div>
+  <div id="callTop"><span id="callStatusText"></span></div>
+  <video id="callLocalVideo" autoplay playsinline muted></video>
+  <div id="callControls">
+    <button class="ctrl" id="callMicBtn" onclick="toggleCallMic()" title="Mikrofon">🎤</button>
+    <button class="ctrl" id="callVidBtn" onclick="toggleCallVideo()" title="Kamera">📷</button>
+    <button class="ctrl danger" onclick="endCall()" title="Aramayi bitir">📞</button>
+  </div>
+</div>
 
 <!-- Kullanici profil pop-out'u (tiklanan yerin yaninda acilir) -->
 <div class="popout" id="userPopout">
@@ -1002,7 +1048,8 @@ function handle(m){
     case 'voice-peers': m.peers.forEach(pid=>callPeer(pid)); break;
     case 'voice-join': if(currentVoiceRoom && m.server===currentServer && m.room===currentVoiceRoom) sfx('join'); break;
     case 'voice-leave': if(currentVoiceRoom && m.server===currentServer && m.room===currentVoiceRoom) sfx('leave'); removePeer(m.id); break;
-    case 'signal': onSignal(m.from, m.signal); break;
+    case 'signal': if(m.call) onCallSignal(m.from, m.signal); else onSignal(m.from, m.signal); break;
+    case 'call': handleCall(m); break;
   }
 }
 
@@ -1342,6 +1389,7 @@ function openDM(user){
   $('messages').style.display='block'; $('inputbar').style.display='block';
   $('topIcon').textContent='@'; $('topName').textContent=user;
   $('msgInput').placeholder=`@${user} kullanicisina mesaj...`;
+  $('dmCallVoice').style.display=''; $('dmCallVideo').style.display='';   // DM arama butonlari
   renderDMList();
   fetch('/api/dm?token='+encodeURIComponent(token)+'&with='+encodeURIComponent(user))
     .then(r=>r.json()).then(list=>{
@@ -1355,6 +1403,125 @@ function openDM(user){
 }
 function inVoiceView(){ return $('videoArea').style.display==='block'; }
 
+// ======== DM ARAMA (sesli / goruntulu) ========
+let callPC=null, callStream=null, callWith=null, callPeerId=null, callKind='voice', callState='idle';
+let incoming=null, callTimeout=null, ringTimer=null, callMicOn=true;
+function startCall(kind){
+  if(!currentDM){ toast('Once bir DM ac'); return; }
+  if(callState!=='idle'){ toast('Zaten bir arama var'); return; }
+  callKind=kind; callWith=currentDM; callState='ringing-out'; callPeerId=null; callMicOn=true;
+  navigator.mediaDevices.getUserMedia({audio:true, video:kind==='video'}).then(stream=>{
+    callStream=stream;
+    showCallView('📞 '+callWith+' araniyor...');
+    fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,to:callWith,kind,action:'ring'})});
+    callTimeout=setTimeout(()=>{ if(callState==='ringing-out'){ toast(callWith+' cevap vermedi'); cancelOutgoing(); } }, 30000);
+  }).catch(()=>{ toast('Mikrofon/kamera acilamadi'); callState='idle'; });
+}
+function cancelOutgoing(){
+  if(callWith) fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,to:callWith,action:'cancel'})});
+  endCallLocal();
+}
+function handleCall(m){
+  if(m.action==='ring'){
+    if(callState!=='idle'){ fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:m.fromId,action:'busy'})}); return; }
+    incoming={from:m.from, fromId:m.fromId, kind:m.kind};
+    cacheProfile(m.from,{}); const a=$('incAva'); a.style.backgroundImage=avatarOf(m.from)?`url('${avatarOf(m.from)}')`:''; a.textContent=avatarOf(m.from)?'':initials(m.from);
+    $('incName').textContent=m.from; $('incKind').textContent=(m.kind==='video'?'📹 Goruntulu':'📞 Sesli')+' arama...';
+    $('incomingCall').classList.add('show'); startRing(); notify('📞 '+m.from, 'seni ariyor');
+  } else if(m.action==='accept'){
+    if(callState!=='ringing-out') return;
+    clearTimeout(callTimeout); callPeerId=m.fromId; callState='active';
+    setCallStatus('🟢 '+callWith); startPeerAsCaller();
+  } else if(m.action==='decline'||m.action==='busy'){
+    if(callState==='ringing-out'){ toast(callWith+(m.action==='busy'?' mesgul':' aramayi reddetti')); endCallLocal(); }
+  } else if(m.action==='cancel'){
+    if(incoming){ stopRing(); $('incomingCall').classList.remove('show'); incoming=null; toast('Arama iptal edildi'); }
+  } else if(m.action==='end'){
+    if(callState!=='idle'){ toast('Arama bitti'); endCallLocal(); }
+  }
+}
+function acceptCall(){
+  if(!incoming) return;
+  stopRing(); $('incomingCall').classList.remove('show');
+  const inc=incoming; incoming=null;
+  callKind=inc.kind; callWith=inc.from; callPeerId=inc.fromId; callState='active'; callMicOn=true;
+  navigator.mediaDevices.getUserMedia({audio:true, video:inc.kind==='video'}).then(stream=>{
+    callStream=stream;
+    fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:inc.fromId,action:'accept'})});
+    showCallView('🟢 '+callWith); attachCallLocal();
+  }).catch(()=>{ toast('Mikrofon/kamera acilamadi'); fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:inc.fromId,action:'decline'})}); callState='idle'; });
+}
+function declineCall(){
+  if(!incoming) return;
+  stopRing(); $('incomingCall').classList.remove('show');
+  fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:incoming.fromId,action:'decline'})});
+  incoming=null;
+}
+function makeCallPC(){
+  const pc=new RTCPeerConnection(RTC_CONF);
+  callStream.getTracks().forEach(t=>pc.addTrack(t,callStream));
+  pc.onicecandidate=e=>{ if(e.candidate) callSignal({candidate:e.candidate}); };
+  pc.ontrack=e=>{ const v=$('callRemoteVideo'); v.srcObject=e.streams[0];
+    const hasV=e.streams[0].getVideoTracks().length>0; $('callNoVideo').style.display=hasV?'none':'flex'; };
+  pc.onconnectionstatechange=()=>{ if(['failed','disconnected','closed'].includes(pc.connectionState) && callState==='active'){ toast('Baglanti koptu'); endCallLocal(); } };
+  callPC=pc; return pc;
+}
+async function startPeerAsCaller(){
+  attachCallLocal();
+  const pc=makeCallPC();
+  const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+  callSignal({sdp:pc.localDescription});
+}
+async function onCallSignal(fromId, data){
+  if(fromId!==callPeerId || callState==='idle') return;
+  let pc=callPC;
+  if(data.sdp){
+    if(data.sdp.type==='offer'){ if(!pc) pc=makeCallPC(); await pc.setRemoteDescription(data.sdp); const ans=await pc.createAnswer(); await pc.setLocalDescription(ans); callSignal({sdp:pc.localDescription}); }
+    else if(data.sdp.type==='answer'&&pc){ await pc.setRemoteDescription(data.sdp); }
+  } else if(data.candidate&&pc){ try{ await pc.addIceCandidate(data.candidate); }catch(e){} }
+}
+function callSignal(sig){ fetch('/api/signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:callPeerId,from:clientId,signal:sig,call:true})}); }
+function endCall(){
+  if(callPeerId) fetch('/api/call',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,toId:callPeerId,action:'end'})});
+  else if(callState==='ringing-out') return cancelOutgoing();
+  endCallLocal();
+}
+function endCallLocal(){
+  clearTimeout(callTimeout); stopRing();
+  if(callPC){ try{callPC.close();}catch(e){} callPC=null; }
+  if(callStream){ callStream.getTracks().forEach(t=>t.stop()); callStream=null; }
+  callWith=null; callPeerId=null; callState='idle'; incoming=null;
+  $('callView').classList.remove('show'); $('callRemoteVideo').srcObject=null; $('callLocalVideo').srcObject=null;
+}
+function showCallView(status){
+  setCallStatus(status);
+  const a=$('callRemoteAva'); a.style.backgroundImage=avatarOf(callWith)?`url('${avatarOf(callWith)}')`:''; a.textContent=avatarOf(callWith)?'':initials(callWith);
+  $('callNoVideo').style.display='flex';
+  $('callView').classList.add('show');
+}
+function attachCallLocal(){
+  const lv=$('callLocalVideo'); lv.srcObject=callStream;
+  const hasV=callStream.getVideoTracks().length>0; lv.classList.toggle('show',hasV);
+  $('callVidBtn').classList.toggle('on',hasV);
+}
+function setCallStatus(t){ $('callStatusText').textContent=t; }
+function toggleCallMic(){
+  if(!callStream) return; const tr=callStream.getAudioTracks()[0]; if(!tr) return;
+  callMicOn=!callMicOn; tr.enabled=callMicOn;
+  $('callMicBtn').textContent=callMicOn?'🎤':'🔇'; $('callMicBtn').classList.toggle('muted',!callMicOn);
+}
+async function toggleCallVideo(){
+  if(!callStream || !callPC) return;
+  let track=callStream.getVideoTracks()[0];
+  if(track){ track.stop(); callStream.removeTrack(track); const s=callPC.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) callPC.removeTrack(s); }
+  else { try{ const cam=await navigator.mediaDevices.getUserMedia({video:true}); const vt=cam.getVideoTracks()[0]; callStream.addTrack(vt); callPC.addTrack(vt,callStream); }catch(e){ toast('Kamera acilamadi'); return; } }
+  // yeniden teklif
+  try{ const offer=await callPC.createOffer(); await callPC.setLocalDescription(offer); callSignal({sdp:callPC.localDescription}); }catch(e){}
+  attachCallLocal();
+}
+function startRing(){ stopRing(); sfx('ring'); ringTimer=setInterval(()=>sfx('ring'),1600); }
+function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer=null; } }
+
 function openChannel(c){
   if(!c || !currentServer) return;
   currentDM=null; currentChannel=c; cancelReply(); typingState={}; renderTyping();
@@ -1362,6 +1529,7 @@ function openChannel(c){
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
+  $('dmCallVoice').style.display='none'; $('dmCallVideo').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';   // sesli baglanti kopmadan sohbete don
   $('messages').style.display='block'; $('inputbar').style.display='block';
   renderChannels(); renderRail();
@@ -1662,6 +1830,7 @@ function saveProfile(){
 // ======== Arkadaslar ========
 function showFriends(){
   currentDM=null; applyChrome(); renderDMList();
+  $('dmCallVoice').style.display='none'; $('dmCallVideo').style.display='none';
   $('messages').style.display='none'; $('inputbar').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';
   $('friendsView').style.display='block';
@@ -1901,7 +2070,7 @@ function sfx(name){
       join:[[523,.09],[784,.12]], leave:[[659,.09],[392,.14]],
       mute:[[440,.10]], unmute:[[660,.10]],
       deafen:[[440,.08],[300,.13]], undeafen:[[500,.08],[720,.13]],
-      ping:[[880,.07],[1175,.10]]
+      ping:[[880,.07],[1175,.10]], ring:[[660,.25],[0,.12],[660,.25]]
     };
     const seq=seqs[name]; if(!seq) return;
     let t=_actx.currentTime;
