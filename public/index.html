@@ -372,9 +372,9 @@
 
     <!-- SOL -->
     <div class="sidebar" id="sidebar">
-      <div class="server-name" style="cursor:pointer" onclick="openSettings();settingsTab('server')" title="Sunucu ayarlari">
+      <div class="server-name" style="cursor:pointer" onclick="serverNameClick()" title="Sunucu ayarlari">
         <span class="rec-dot" id="recDot"></span><span id="serverNameText">SUICIDEHOTLINE</span>
-        <span style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
+        <span id="serverGear" style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
       </div>
       <div class="scroll">
         <!-- ANA SAYFA: Arkadaslar + DM listesi -->
@@ -1038,6 +1038,13 @@ function applyServerHeader(){
   $('serverNameText').textContent = serverInfo.name || 'Sunucu';
   applyRecBlink();
 }
+function serverNameClick(){ if(currentServer){ openSettings(); settingsTab('server'); } }
+function applyChrome(){   // DM/ana sayfa modunda sunucuya ait seyleri gizle
+  const home = !currentServer;
+  $('members').style.display = home ? 'none' : '';
+  $('serverGear').style.display = home ? 'none' : '';
+  document.querySelectorAll('.ppl-btn').forEach(b=>b.style.display = home ? 'none' : '');
+}
 async function openServer(sid){
   currentDM=null;
   try{
@@ -1048,7 +1055,7 @@ async function openServer(sid){
   currentServer = sid;
   textChannels = serverInfo.text || []; voiceChannels = serverInfo.voice || [];
   $('homeSidebar').style.display='none'; $('serverSidebar').style.display='block';
-  $('sidebar').style.display='flex'; $('members').style.display='';
+  $('sidebar').style.display='flex'; applyChrome();
   applyServerHeader(); renderRail(); applyOwnerUI(); applyCatCollapse(); renderMembers();
   $('friendsView').style.display='none';
   // ilk kanali ac
@@ -1059,7 +1066,7 @@ async function openServer(sid){
 function goHome(){
   currentServer=null; currentDM=null; serverInfo={}; textChannels=[]; voiceChannels=[]; currentChannel=null;
   $('homeSidebar').style.display='block'; $('serverSidebar').style.display='none';
-  renderRail(); renderMembers();
+  applyChrome(); renderRail();
   $('serverNameText').textContent='Ana Sayfa';
   fetchDMList(); showFriends();
 }
@@ -1291,7 +1298,7 @@ function openDM(user){
   dmUnread[user.toLowerCase()]=0; updateReqBadge(); renderRail();
   closeModal('profileModal');
   $('homeSidebar').style.display='block'; $('serverSidebar').style.display='none';
-  $('serverNameText').textContent='Ana Sayfa';
+  $('serverNameText').textContent='Ana Sayfa'; applyChrome();
   $('friendsView').style.display='none'; $('videoArea').style.display='none'; $('controls').style.display='none';
   $('messages').style.display='block'; $('inputbar').style.display='block';
   $('topIcon').textContent='@'; $('topName').textContent=user;
@@ -1568,7 +1575,7 @@ function saveProfile(){
 
 // ======== Arkadaslar ========
 function showFriends(){
-  currentDM=null;
+  currentDM=null; applyChrome(); renderDMList();
   $('messages').style.display='none'; $('inputbar').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';
   $('friendsView').style.display='block';
