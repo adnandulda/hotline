@@ -107,6 +107,7 @@ function sendMail({ to, subject, text }, done){
   socket.on('timeout', () => finish(new Error('SMTP zaman asimi')));
   socket.on('error', (e) => finish(e));
   socket.on('data', (chunk) => {
+    if (finished || idx >= seq.length) return;   // is bitti / dizi sonu -> sonraki yanitlari (ornegin "221 Bye") yok say
     buf += chunk.toString('utf8');
     const lines = buf.split('\r\n');
     for (const line of lines){
@@ -478,5 +479,10 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  Ayni wifi-deki telefon/PC:  http://<BU-BILGISAYARIN-IP>:' + PORT);
   console.log('  (IP ogrenmek icin Windows-ta cmd-ye: ipconfig)');
   console.log('  Durdurmak icin:  Ctrl + C');
+  if (mailReady()){
+    console.log('  📧 Mail: AYARLI (' + mailConfig().user + ') — kodlar mail ile gidecek');
+  } else {
+    console.log('  📧 Mail: AYARLANMAMIS (TEST MODU) — kodlar sadece bu ekrana yazilir');
+  }
   console.log('===================================================');
 });
