@@ -53,7 +53,8 @@ const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 
 function getProfile(user){
   const p = profiles[key(user)] || {};
-  return { user, avatar: p.avatar || null, bio: p.bio || '', status: p.status || 'online', customStatus: p.customStatus || '' };
+  return { user, avatar: p.avatar || null, bio: p.bio || '', status: p.status || 'online', customStatus: p.customStatus || '',
+    banner: p.banner || null, bannerColor: p.bannerColor || '' };
 }
 function getFriendData(user){ if (!friends[key(user)]) friends[key(user)] = { friends: [], requests: [] }; return friends[key(user)]; }
 function dmKey(a, b){ return [key(a), key(b)].sort().join('|'); }
@@ -603,9 +604,22 @@ const server = http.createServer((req, res) => {
       const c = clients.get(data.id); if (!c){ res.writeHead(400); return res.end(); }
       const k = key(c.user); profiles[k] = profiles[k] || {};
       if (typeof data.bio === 'string') profiles[k].bio = data.bio.slice(0, 300);
+      if (typeof data.bannerColor === 'string' && (/^#[0-9a-f]{6}$/i.test(data.bannerColor) || data.bannerColor==='')) profiles[k].bannerColor = data.bannerColor;
       saveJSON(PROFILES_FILE, profiles);
       broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
       res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Profil afisi (banner) yukle ----------
+  if (p === '/api/banner' && req.method === 'POST'){
+    const c = clients.get(req.headers['x-client-id']);
+    if (!c){ res.writeHead(400); return res.end(); }
+    return saveBinary(req, res, (file) => {
+      const k = key(c.user); profiles[k] = profiles[k] || {};
+      profiles[k].banner = file.url; saveJSON(PROFILES_FILE, profiles);
+      broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
+      res.writeHead(200); res.end(JSON.stringify({ url: file.url }));
     });
   }
 

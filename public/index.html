@@ -120,6 +120,23 @@
   /* Rol etiketleri */
   .role-chip{border:1px solid var(--border); border-radius:12px; padding:3px 10px; font-size:12px; cursor:pointer; color:var(--text); opacity:.65; user-select:none}
   .role-chip.on{opacity:1; font-weight:600}
+  /* Kullanici profil pop-out'u */
+  .popout{position:fixed; width:300px; max-width:92vw; background:#232428; border-radius:10px; z-index:80; display:none;
+    box-shadow:0 8px 30px rgba(0,0,0,.6); overflow:hidden}
+  .po-banner{height:60px; background:linear-gradient(135deg,var(--accent),#3641a8); background-size:cover; background-position:center}
+  .po-ava{position:absolute; top:24px; left:14px; width:72px; height:72px; border-radius:50%; border:6px solid #232428;
+    background:var(--accent); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
+    font-size:26px; font-weight:700; color:#fff}
+  .po-card{padding:46px 12px 12px}
+  .po-inner{background:#111214; border-radius:8px; padding:12px}
+  .po-name{font-size:20px; font-weight:700; word-break:break-word}
+  .po-status{font-size:13px; color:var(--muted); margin-top:2px}
+  .po-sep{height:1px; background:#2b2d31; margin:10px 0}
+  .po-section{margin-bottom:2px}
+  .po-label{font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.4px; margin-bottom:6px}
+  .po-bio{font-size:14px; color:var(--text); white-space:pre-wrap; line-height:1.45; font-family:var(--serif); max-height:120px; overflow:auto}
+  .po-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+  .po-actions .btn{width:auto; flex:1; min-width:90px; padding:9px 12px; font-size:14px}
   .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
     display:flex; align-items:center; gap:9px}
   .rec-dot{width:12px; height:12px; border-radius:50%; background:#ff3b30; flex-shrink:0;
@@ -513,12 +530,18 @@
 <!-- PROFIL DUZENLEME MODALI -->
 <div class="modal-bg" id="editModal" onclick="if(event.target===this)closeModal('editModal')">
   <div class="modal">
-    <div class="banner"></div>
+    <div class="banner" id="emBanner"></div>
     <div class="pbody">
       <div class="pava" id="emAva" onclick="avatarInput.click()" title="Fotograf degistir"></div>
       <div class="label" style="margin-top:8px">Profil Fotografi</div>
       <button class="btn sec" onclick="avatarInput.click()">📷 Fotograf Yukle / Degistir</button>
       <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar()">
+      <div class="label" style="margin-top:16px">Profil Afisi (banner)</div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <input type="color" id="emBannerColor" value="#5865f2" title="Afis rengi" onchange="setBannerColor()" style="width:46px;height:42px;border:none;background:none;cursor:pointer">
+        <button class="btn sec" style="width:auto" onclick="bannerInput.click()">🖼️ Afis Resmi Yukle</button>
+        <input type="file" id="bannerInput" accept="image/*" style="display:none" onchange="uploadBanner()">
+      </div>
       <div class="label" style="margin-top:16px">Hakkinda (bio)</div>
       <textarea id="emBio" maxlength="300" placeholder="Kendinden bahset..."></textarea>
       <div class="row">
@@ -664,6 +687,22 @@
 
 <!-- Emoji secici (tepki + mesaj kutusu) -->
 <div class="emoji-pop" id="emojiPop"></div>
+
+<!-- Kullanici profil pop-out'u (tiklanan yerin yaninda acilir) -->
+<div class="popout" id="userPopout">
+  <div class="po-banner" id="poBanner"></div>
+  <div class="po-ava" id="poAva"></div>
+  <div class="po-card">
+    <div class="po-inner">
+      <div class="po-name" id="poName"></div>
+      <div class="po-status" id="poStatus"></div>
+      <div class="po-section" id="poBioWrap"><div class="po-sep"></div><div class="po-label">Hakkinda</div><div class="po-bio" id="poBio"></div></div>
+      <div class="po-section" id="poRolesWrap"><div class="po-sep"></div><div class="po-label">Roller</div><div id="poRoles" style="display:flex;flex-wrap:wrap;gap:5px"></div></div>
+      <div id="poAdmin"></div>
+      <div class="po-actions" id="poActions"></div>
+    </div>
+  </div>
+</div>
 
 <!-- Sunucu olustur / katil -->
 <div class="modal-bg" id="serverModal" onclick="if(event.target===this)closeModal('serverModal')">
@@ -1196,13 +1235,13 @@ function deleteRole(id){
   fetch('/api/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,server:currentServer,action:'delete',roleId:id})});
 }
 function renderProfileAdmin(user){
-  const el=$('pmAdmin'); el.innerHTML='';
+  const el=$('poAdmin'); el.innerHTML='';
   if(!currentServer || user.toLowerCase()===username.toLowerCase()) return;
   if(!(serverInfo.members||[]).some(m=>m.toLowerCase()===user.toLowerCase())) return;
   let html='';
   if(hasPermClient('manageRoles') && (serverInfo.roles||[]).length){
     const ids=(serverInfo.memberRoles&&serverInfo.memberRoles[user.toLowerCase()])||[];
-    html += `<div class="label">Roller</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">`;
+    html += `<div class="po-sep"></div><div class="po-label">Rol Ata / Kaldir</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">`;
     html += (serverInfo.roles||[]).map(r=>{
       const has=ids.includes(r.id);
       return `<span class="role-chip ${has?'on':''}" style="border-color:${r.color};${has?'background:'+r.color+'33':''}" onclick="toggleMemberRole('${esc(user)}','${r.id}',${has})">${esc(r.name)}</span>`;
@@ -1222,7 +1261,7 @@ function toggleMemberRole(user, roleId, has){
 function kickMember(user){
   if(!confirm(user+' kullanicisini sunucudan atmak istiyor musun?')) return;
   fetch('/api/kick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,server:currentServer,target:user})})
-    .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Hata'); } else closeModal('profileModal'); });
+    .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Hata'); } else closePopout(); });
 }
 
 // ======== Kanal yonetimi ========
@@ -1296,7 +1335,7 @@ function openDM(user){
   if(!user) return;
   currentServer=null; currentDM = user; cancelReply(); typingState={}; renderTyping();
   dmUnread[user.toLowerCase()]=0; updateReqBadge(); renderRail();
-  closeModal('profileModal');
+  closePopout();
   $('homeSidebar').style.display='block'; $('serverSidebar').style.display='none';
   $('serverNameText').textContent='Ana Sayfa'; applyChrome();
   $('friendsView').style.display='none'; $('videoArea').style.display='none'; $('controls').style.display='none';
@@ -1472,6 +1511,7 @@ function openEmojiInput(ev){
 document.addEventListener('click', e=>{
   if(!e.target.closest('.emoji-pop') && !e.target.closest('[onclick*="EmojiInput"]') && !e.target.closest('[onclick*="ReactPicker"]')) closeEmojiPop();
   if(!e.target.closest('#statusMenu') && !e.target.closest('#meAva')) $('statusMenu').classList.remove('show');
+  if(!e.target.closest('#userPopout') && !e.target.closest('[onclick*="openProfile"]')) closePopout();
 });
 
 // --- Yaziyor... gostergesi ---
@@ -1519,21 +1559,50 @@ function renderMembers(){
   $('memberList').innerHTML = html;
 }
 
-// ======== Profil goruntuleme ========
+// ======== Profil pop-out (tiklanan yerin yaninda) ========
+let lastClickX=window.innerWidth/2, lastClickY=window.innerHeight/2;
+document.addEventListener('mousedown', e=>{ lastClickX=e.clientX; lastClickY=e.clientY; }, true);
+function closePopout(){ $('userPopout').style.display='none'; }
+function positionPopout(el, x, y){
+  el.style.display='block';
+  const w=el.offsetWidth||300, h=el.offsetHeight||320;
+  let left = x+10; if(left+w > window.innerWidth-8) left = x-w-10; if(left<8) left=8;
+  let top = y-30; if(top+h > window.innerHeight-8) top = window.innerHeight-h-8; if(top<8) top=8;
+  el.style.left=left+'px'; el.style.top=top+'px';
+}
 function openProfile(user){
+  const cx=lastClickX, cy=lastClickY;
   fetch('/api/get-profile?user='+encodeURIComponent(user)).then(r=>r.json()).then(p=>{
     cacheProfile(user, p);
-    const url=p.avatar;
-    const a=$('pmAva');
-    if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
-    $('pmName').textContent=p.user;
+    // afis (banner)
+    const b=$('poBanner');
+    if(p.banner) b.style.background=`url('${p.banner}') center/cover`;
+    else if(p.bannerColor) b.style.background=p.bannerColor;
+    else b.style.background='linear-gradient(135deg,var(--accent),#3641a8)';
+    // avatar
+    const a=$('poAva');
+    if(p.avatar){ a.style.backgroundImage=`url('${p.avatar}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
+    // ad + durum
+    const col=roleColorOf(user);
+    $('poName').textContent=p.user; $('poName').style.color=col||'';
     const si=statusInfo(p.status, p.online);
-    $('pmStat').textContent = `${si.emoji} ${si.label}` + (p.customStatus ? ' · '+p.customStatus : '');
-    $('pmBio').textContent = p.bio || 'Henuz bir sey yazmamis.';
-    // aksiyon butonlari
-    const act=$('pmActions'); act.innerHTML='';
+    $('poStatus').textContent = `${si.emoji} ${si.label}` + (p.customStatus ? ' · '+p.customStatus : '');
+    // hakkinda
+    if(p.bio){ $('poBioWrap').style.display='block'; $('poBio').textContent=p.bio; } else $('poBioWrap').style.display='none';
+    // roller
+    const rw=$('poRolesWrap');
+    if(currentServer && (serverInfo.memberRoles||{})[user.toLowerCase()]){
+      const ids=serverInfo.memberRoles[user.toLowerCase()]||[];
+      const rs=(serverInfo.roles||[]).filter(r=>ids.includes(r.id));
+      if(rs.length){ rw.style.display='block'; $('poRoles').innerHTML=rs.map(r=>`<span class="role-chip on" style="border-color:${r.color};background:${r.color}33">${esc(r.name)}</span>`).join(''); }
+      else rw.style.display='none';
+    } else rw.style.display='none';
+    // yonetim (rol ata / kick)
+    renderProfileAdmin(p.user);
+    // aksiyonlar
+    const act=$('poActions');
     if(p.user.toLowerCase()===username.toLowerCase()){
-      act.innerHTML=`<button class="btn" onclick="closeModal('profileModal');openEditProfile()">Profilini Duzenle</button>`;
+      act.innerHTML=`<button class="btn" onclick="closePopout();openEditProfile()">Profilini Duzenle</button>`;
     } else {
       let btns = `<button class="btn sec" onclick="openDM('${esc(p.user)}')">💬 Mesaj</button>`;
       if(myFriends.friends.some(f=>f.toLowerCase()===p.user.toLowerCase())){
@@ -1545,18 +1614,34 @@ function openProfile(user){
       }
       act.innerHTML = btns;
     }
-    renderProfileAdmin(p.user);
-    openModal('profileModal');
-  });
+    positionPopout($('userPopout'), cx, cy);
+  }).catch(()=>{});
 }
 
 // ======== Profil duzenleme ========
+function applyEmBanner(){
+  const b=$('emBanner');
+  if(myProfile.banner) b.style.background=`url('${myProfile.banner}') center/cover`;
+  else if(myProfile.bannerColor){ b.style.background=myProfile.bannerColor; $('emBannerColor').value=myProfile.bannerColor; }
+  else b.style.background='linear-gradient(135deg,var(--accent),var(--accent2))';
+}
 function openEditProfile(){
   const a=$('emAva');
   if(myProfile.avatar){ a.style.backgroundImage=`url('${myProfile.avatar}')`; a.textContent=''; }
   else { a.style.backgroundImage=''; a.textContent=initials(username); }
   $('emBio').value=myProfile.bio||'';
+  applyEmBanner();
   openModal('editModal'); closeDrawers();
+}
+function setBannerColor(){
+  const col=$('emBannerColor').value;
+  myProfile.bannerColor=col; myProfile.banner=null; applyEmBanner();
+  fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,bannerColor:col})});
+}
+function uploadBanner(){
+  const f=$('bannerInput').files[0]; if(!f) return;
+  fetch('/api/banner',{method:'POST',headers:{'Content-Type':f.type,'X-Client-Id':clientId,'X-Filename':encodeURIComponent(f.name)},body:f})
+    .then(r=>r.json()).then(d=>{ myProfile.banner=d.url; applyEmBanner(); $('bannerInput').value=''; toast('Afis guncellendi'); });
 }
 function uploadAvatar(){
   const f=$('avatarInput').files[0]; if(!f) return;
@@ -1592,7 +1677,7 @@ function friendAct(action, target){
   fetch('/api/friend',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,action,target})}).then(()=>{
       if(action==='add') toast('İstek gonderildi: '+target);
-      closeModal('profileModal');
+      closePopout();
     });
 }
 function renderFriends(){
