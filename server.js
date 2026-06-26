@@ -79,6 +79,7 @@ function inviteCodeFor(sid){ let c=Object.keys(invites).find(x=>invites[x]===sid
 // --- Bellekteki durum ---
 const clients = new Map();              // clientId -> { res, user }
 const voiceMembers = {};                // serverId -> { room -> Set(clientId) }
+const voiceState = {};                  // clientId -> { muted, deafened }
 function vmRoom(sid, room){ voiceMembers[sid]=voiceMembers[sid]||{}; if(!voiceMembers[sid][room]) voiceMembers[sid][room]=new Set(); return voiceMembers[sid][room]; }
 
 function sendTo(clientId, payload){
@@ -113,7 +114,8 @@ function broadcastPresence(){
     for (const s of userServers(c.user)){
       const vm=voiceMembers[s.id]||{};
       for (const room in vm){
-        const a=[...vm[room]].filter(x=>clients.has(x)).map(x=>({ id:x, user:clients.get(x).user, avatar:getProfile(clients.get(x).user).avatar }));
+        const a=[...vm[room]].filter(x=>clients.has(x)).map(x=>({ id:x, user:clients.get(x).user, avatar:getProfile(clients.get(x).user).avatar,
+          muted: !!(voiceState[x] && voiceState[x].muted), deafened: !!(voiceState[x] && voiceState[x].deafened) }));
         if (a.length){ voice[s.id]=voice[s.id]||{}; voice[s.id][room]=a; }
       }
     }
@@ -225,7 +227,7 @@ const server = http.createServer((req, res) => {
 
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch(e){} }, 25000);
     req.on('close', () => {
-      clearInterval(ping); clients.delete(clientId);
+      clearInterval(ping); clients.delete(clientId); delete voiceState[clientId];
       for (const sid in voiceMembers){ for (const room in voiceMembers[sid]){
         if (voiceMembers[sid][room].delete(clientId)) broadcastToServer(sid, { type:'voice-leave', server:sid, room, id:clientId });
       } }
@@ -695,8 +697,10 @@ const server = http.createServer((req, res) => {
         sendTo(id, { type:'voice-peers', server:sid, room, peers: existing });
         broadcastToServer(sid, { type:'voice-join', server:sid, room, id, user: clients.get(id).user }, id);
       } else if (action === 'leave'){
-        set.delete(id);
+        set.delete(id); delete voiceState[id];
         broadcastToServer(sid, { type:'voice-leave', server:sid, room, id });
+      } else if (action === 'state'){
+        voiceState[id] = { muted: !!data.muted, deafened: !!data.deafened };
       }
       broadcastPresence(); res.writeHead(200); res.end('ok');
     });

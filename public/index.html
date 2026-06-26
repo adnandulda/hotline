@@ -218,6 +218,15 @@
   .dm-row .dm-badge{background:var(--red); color:#fff; border-radius:10px; font-size:11px; font-weight:700; padding:0 6px; min-width:18px; height:18px; line-height:18px; text-align:center}
   .voice-members{margin:0 8px 4px 22px}
   .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
+  .voice-member .vm-ava{display:inline-flex; border-radius:50%; border:2px solid transparent}
+  .voice-member.speaking .vm-ava{border-color:var(--green); box-shadow:0 0 6px var(--green)}
+  .voice-member .vm-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .voice-member.speaking .vm-name{color:var(--text)}
+  .voice-member .vm-icons{font-size:12px; flex-shrink:0}
+  #callRemoteVideo{cursor:pointer}
+  #callView.remote-speaking #callNoVideo .ava{box-shadow:0 0 0 4px var(--green), 0 0 14px var(--green)}
+  #callLocalVideo.speaking{outline:3px solid var(--green)}
+  .tile{cursor:pointer}
   .me-bar{padding:6px 8px; background:var(--bg3); display:flex; align-items:center; gap:4px}
   .me-id{display:flex; align-items:center; gap:8px; flex:1; min-width:0; padding:4px; border-radius:6px; cursor:pointer}
   .me-id:hover{background:#3a3d44}
@@ -765,8 +774,8 @@
 
 <!-- ARAMA GORUNUMU -->
 <div id="callView">
-  <video id="callRemoteVideo" autoplay playsinline></video>
-  <div id="callNoVideo"><div class="ava" id="callRemoteAva" style="width:120px;height:120px;font-size:46px"></div></div>
+  <video id="callRemoteVideo" autoplay playsinline onclick="toggleFull(this)" title="Tam ekran icin tikla"></video>
+  <div id="callNoVideo" onclick="toggleFull(document.getElementById('callView'))" style="cursor:pointer"><div class="ava" id="callRemoteAva" style="width:120px;height:120px;font-size:46px"></div></div>
   <div id="callTop"><span id="callStatusText"></span></div>
   <video id="callLocalVideo" autoplay playsinline muted></video>
   <div id="callControls">
@@ -1262,7 +1271,11 @@ function renderChannels(){
        ${u?`<span class="ch-unread">${u>99?'99+':u}</span>`:''}${chToolsHTML('text',i)}</div>`;
   }).join('');
   $('voiceChannels').innerHTML = voiceChannels.map((c,i)=>{
-    const mems=(presenceVoice[c]||[]).map(u=>`<div class="voice-member">${avaHTML(u.user,20)}<span onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span></div>`).join('');
+    const mems=(presenceVoice[c]||[]).map(u=>{
+      const ic = (u.deafened?'<span title="Sagirlastirildi">🙉</span>':'') + (u.muted&&!u.deafened?'<span title="Susturuldu">🔇</span>':'');
+      return `<div class="voice-member" id="vmember-${u.id}"><span class="vm-ava">${avaHTML(u.user,20)}</span>`+
+        `<span class="vm-name" onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span><span class="vm-icons">${ic}</span></div>`;
+    }).join('');
     return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">
        <span class="cname">🔊 ${esc(c)}</span>${chToolsHTML('voice',i)}</div><div class="voice-members">${mems}</div>`;
   }).join('');
@@ -1514,7 +1527,8 @@ function makeCallPC(){
   callStream.getTracks().forEach(t=>pc.addTrack(t,callStream));
   pc.onicecandidate=e=>{ if(e.candidate) callSignal({candidate:e.candidate}); };
   pc.ontrack=e=>{ const v=$('callRemoteVideo'); v.srcObject=e.streams[0];
-    const hasV=e.streams[0].getVideoTracks().length>0; $('callNoVideo').style.display=hasV?'none':'flex'; };
+    const hasV=e.streams[0].getVideoTracks().length>0; $('callNoVideo').style.display=hasV?'none':'flex';
+    watchSpeaking('call-remote', e.streams[0]); };
   pc.onconnectionstatechange=()=>{ if(['failed','disconnected','closed'].includes(pc.connectionState) && callState==='active'){ toast('Baglanti koptu'); endCallLocal(); } };
   callPC=pc; return pc;
 }
@@ -1540,10 +1554,12 @@ function endCall(){
 }
 function endCallLocal(){
   clearTimeout(callTimeout); stopRing(); stopPing();
+  unwatchSpeaking('call-local'); unwatchSpeaking('call-remote');
   if(callPC){ try{callPC.close();}catch(e){} callPC=null; }
   if(callStream){ callStream.getTracks().forEach(t=>t.stop()); callStream=null; }
   callWith=null; callPeerId=null; callState='idle'; incoming=null;
-  $('callView').classList.remove('show'); $('callRemoteVideo').srcObject=null; $('callLocalVideo').srcObject=null;
+  $('callView').classList.remove('show','remote-speaking'); $('callRemoteVideo').srcObject=null; $('callLocalVideo').srcObject=null;
+  try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
 }
 function showCallView(status){
   setCallStatus(status);
@@ -1555,6 +1571,7 @@ function attachCallLocal(){
   const lv=$('callLocalVideo'); lv.srcObject=callStream;
   const hasV=callStream.getVideoTracks().length>0; lv.classList.toggle('show',hasV);
   $('callVidBtn').classList.toggle('on',hasV);
+  watchSpeaking('call-local', callStream);
 }
 function setCallStatus(t){ $('callStatusText').textContent=t; }
 function toggleCallMic(){
@@ -1993,7 +2010,7 @@ async function joinVoice(room){
   sfx('join');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,server:voiceServer,action:'join',room})});
-  startPing();
+  startPing(); setTimeout(reportVoiceState, 400);
 }
 async function leaveVoice(){
   if(!currentVoiceRoom) return;
@@ -2045,6 +2062,7 @@ function addTile(id,label,stream,muted){
   if(!tile){ tile=document.createElement('div'); tile.className='tile'; tile.id='tile-'+id;
     const vol = id!=='local' ? `<input class="vol" type="range" min="0" max="100" value="100" title="Ses seviyesi" oninput="this.closest('.tile').querySelector('video').volume=this.value/100">` : '';
     tile.innerHTML=`<div class="novid">${initials(label)}</div><video autoplay playsinline ${muted?'muted':''}></video>${vol}<div class="label">${esc(label)}</div>`;
+    tile.onclick=(e)=>{ if(e.target.closest('.vol')) return; toggleFull(tile); };   // kareye tiklayinca tam ekran
     $('videoGrid').appendChild(tile); }
   const v=tile.querySelector('video');
   v.srcObject=stream;
@@ -2118,15 +2136,21 @@ function unwatchSpeaking(tileId){
   const tile=document.getElementById('tile-'+tileId); if(tile) tile.classList.remove('speaking');
   if(!speakAnalysers.size && speakRAF){ cancelAnimationFrame(speakRAF); speakRAF=null; }
 }
+function toggleFull(el){ try{ if(document.fullscreenElement) document.exitFullscreen(); else if(el) el.requestFullscreen(); }catch(e){} }
+function setSpeak(id, on){
+  const tile=document.getElementById('tile-'+id); if(tile) tile.classList.toggle('speaking', on);
+  if(id==='local'){ const vm=document.getElementById('vmember-'+clientId); if(vm) vm.classList.toggle('speaking', on); }
+  else if(id==='call-remote'){ $('callView').classList.toggle('remote-speaking', on); }
+  else if(id==='call-local'){ const lv=$('callLocalVideo'); if(lv) lv.classList.toggle('speaking', on); }
+  else { const vm=document.getElementById('vmember-'+id); if(vm) vm.classList.toggle('speaking', on); }
+}
 function speakingLoop(){
   speakAnalysers.forEach((a,id)=>{
     a.analyser.getByteTimeDomainData(a.data);   // zaman alani RMS = konusma algilama
     let sum=0; for(let i=0;i<a.data.length;i++){ const v=(a.data[i]-128)/128; sum+=v*v; }
     const rms=Math.sqrt(sum/a.data.length);
-    const tile=document.getElementById('tile-'+id);
-    // yerel: sadece gercekten ses gidiyorsa (mute/ptt degilse)
-    const live = id!=='local' || micEnabled();
-    if(tile) tile.classList.toggle('speaking', live && rms>0.045);
+    const live = id==='local' ? micEnabled() : (id==='call-local' ? callMicOn : true);
+    setSpeak(id, live && rms>0.04);
   });
   speakRAF=requestAnimationFrame(speakingLoop);
 }
@@ -2211,14 +2235,19 @@ async function toggleCamTest(){
     const cv=$('camTest'); cv.srcObject=testStream; cv.style.display='block'; populateDevices();
   }catch(e){ toast('Kamera acilamadi'); }
 }
+function reportVoiceState(){
+  if(!currentVoiceRoom) return;
+  fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,server:voiceServer,room:currentVoiceRoom,action:'state',muted:!micOn,deafened})}).catch(()=>{});
+}
 function toggleMic(){
   if(deafened){ deafened=false; applyRemoteAudio(); micOn=micBeforeDeafen; } // mute'a basinca sagirlik kalkar
-  micOn=!micOn; applyMic(); updateVoiceBtns(); sfx(micOn?'unmute':'mute');
+  micOn=!micOn; applyMic(); updateVoiceBtns(); sfx(micOn?'unmute':'mute'); reportVoiceState();
 }
 function toggleDeafen(){
   deafened=!deafened;
   if(deafened){ micBeforeDeafen=micOn; micOn=false; } else { micOn=micBeforeDeafen; }
-  applyMic(); applyRemoteAudio(); updateVoiceBtns(); sfx(deafened?'deafen':'undeafen');
+  applyMic(); applyRemoteAudio(); updateVoiceBtns(); sfx(deafened?'deafen':'undeafen'); reportVoiceState();
 }
 
 // --- Ses efektleri (WebAudio, harici dosya yok) ---
