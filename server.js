@@ -13,8 +13,11 @@ const tls = require('tls');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const DATA_DIR = path.join(__dirname, 'data');
+// DATA_DIR / UPLOAD_DIR ortam degiskeniyle degistirilebilir.
+// Railway/Fly gibi yerlerde kalici diski (volume) buraya baglayinca
+// acilan hesaplar ve yuklenen dosyalar yeniden baslatmada KAYBOLMAZ.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
