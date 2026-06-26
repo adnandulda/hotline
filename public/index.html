@@ -417,7 +417,7 @@
 
       <!-- Ses baglanti durumu (Discord gibi) -->
       <div class="voice-status" id="voiceStatus" style="display:none">
-        <div class="vs-info">
+        <div class="vs-info" onclick="showVoiceView()" style="cursor:pointer" title="Cagri gorunumune don">
           <span class="vs-signal">📶</span>
           <div>
             <div class="vs-title">Ses Bagli</div>
@@ -1362,6 +1362,7 @@ function openChannel(c){
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
+  $('videoArea').style.display='none'; $('controls').style.display='none';   // sesli baglanti kopmadan sohbete don
   $('messages').style.display='block'; $('inputbar').style.display='block';
   renderChannels(); renderRail();
   const sv=currentServer;
@@ -1726,20 +1727,24 @@ function toast(msg){
 
 // ======== SESLI / GORUNTULU (WebRTC mesh) ========
 let voiceServer=null;
+function showVoiceView(){    // sesli odaya bagliyken goruntu/cagri gorunumune don
+  if(!currentVoiceRoom) return;
+  $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
+  $('videoArea').style.display='block'; $('controls').style.display='flex';
+  $('topIcon').textContent='🔊'; $('topName').textContent=currentVoiceRoom;
+  renderChannels();
+}
 async function joinVoice(room){
   if(!currentServer) return;
-  if(currentVoiceRoom===room) return;
+  if(currentVoiceRoom===room){ showVoiceView(); closeDrawers(); return; }   // zaten baglisin -> goruntuye don
   if(currentVoiceRoom) await leaveVoice();
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
   currentDM=null; currentVoiceRoom=room; voiceServer=currentServer;
   applyMic(); applyRemoteAudio(); updateVoiceBtns();   // onceki mute/deafen tercihini koru
   $('voiceStatus').style.display='flex'; $('vsRoom').textContent=room;
-  $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
-  $('videoArea').style.display='block'; $('controls').style.display='flex';
-  $('topIcon').textContent='🔊'; $('topName').textContent=room;
   addTile('local', username+' (sen)', localStream, true);
-  renderChannels(); closeDrawers();
+  showVoiceView(); closeDrawers();
   sfx('join');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,server:voiceServer,action:'join',room})});
