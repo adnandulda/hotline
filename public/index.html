@@ -164,6 +164,12 @@
   .channel:hover .ch-tools{display:flex}
   .ch-tools span{cursor:pointer; opacity:.7} .ch-tools span:hover{opacity:1}
   .member.off{opacity:.42} .member .mname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  /* DM listesi */
+  .dm-row{display:flex; align-items:center; gap:9px; margin:1px 8px; padding:7px 8px; border-radius:8px; cursor:pointer; color:var(--muted)}
+  .dm-row:hover{background:#35373c; color:var(--text)}
+  .dm-row.active{background:#404249; color:var(--text)}
+  .dm-row .dn{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px}
+  .dm-row .dm-badge{background:var(--red); color:#fff; border-radius:10px; font-size:11px; font-weight:700; padding:0 6px; min-width:18px; height:18px; line-height:18px; text-align:center}
   .voice-members{margin:0 8px 4px 22px}
   .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
   .me-bar{padding:6px 8px; background:var(--bg3); display:flex; align-items:center; gap:4px}
@@ -371,16 +377,25 @@
         <span style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
       </div>
       <div class="scroll">
-        <div class="ch-group" onclick="toggleCat('text')">
-          <span><span class="cat-caret" id="caretText">▾</span> Yazi Kanallari</span>
-          <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('text')" title="Kanal ekle">＋</span>
+        <!-- ANA SAYFA: Arkadaslar + DM listesi -->
+        <div id="homeSidebar" style="display:none">
+          <div class="nav-btn" onclick="showFriends()">👥 Arkadaslar</div>
+          <div class="ch-group" style="cursor:default">Direkt Mesajlar</div>
+          <div id="dmList"></div>
         </div>
-        <div id="textChannels"></div>
-        <div class="ch-group" onclick="toggleCat('voice')">
-          <span><span class="cat-caret" id="caretVoice">▾</span> Sesli Kanallar</span>
-          <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('voice')" title="Sesli kanal ekle">＋</span>
+        <!-- SUNUCU: kanallar -->
+        <div id="serverSidebar">
+          <div class="ch-group" onclick="toggleCat('text')">
+            <span><span class="cat-caret" id="caretText">▾</span> Yazi Kanallari</span>
+            <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('text')" title="Kanal ekle">＋</span>
+          </div>
+          <div id="textChannels"></div>
+          <div class="ch-group" onclick="toggleCat('voice')">
+            <span><span class="cat-caret" id="caretVoice">▾</span> Sesli Kanallar</span>
+            <span class="ch-add owner-only" onclick="event.stopPropagation();addChannel('voice')" title="Sesli kanal ekle">＋</span>
+          </div>
+          <div id="voiceChannels"></div>
         </div>
-        <div id="voiceChannels"></div>
       </div>
 
       <!-- Ses baglanti durumu (Discord gibi) -->
@@ -853,7 +868,7 @@ function handle(m){
       myStatus = myProfile.status || 'online'; myCustomStatus = myProfile.customStatus || '';
       myFriends = m.friends || myFriends;
       myServers = m.servers || [];
-      refreshMe(); updateReqBadge(); renderRail();
+      refreshMe(); updateReqBadge(); renderRail(); fetchDMList();
       if(myServers.length) openServer(myServers[0].id); else goHome();
       break;
     case 'message': {
@@ -924,9 +939,12 @@ function handle(m){
     case 'dm': {
       cacheProfile(m.from, {avatar:m.avatar});
       const other = (m.from.toLowerCase()===username.toLowerCase()) ? m.to : m.from;
+      bumpDM(other, m.text);
       if(currentDM && other.toLowerCase()===currentDM.toLowerCase()){
         appendMessage({ user:m.from, text:m.text, file:m.file, ts:m.ts, avatar:m.avatar });
       } else if(m.from.toLowerCase()!==username.toLowerCase()){
+        dmUnread[other.toLowerCase()]=(dmUnread[other.toLowerCase()]||0)+1;
+        renderDMList(); updateReqBadge(); renderRail();
         toast('💬 '+m.from+': '+String(m.text||'').slice(0,40));
         notify('💬 '+m.from, m.text);
       }
@@ -1029,6 +1047,7 @@ async function openServer(sid){
   }catch(e){ toast('Baglanti hatasi'); return; }
   currentServer = sid;
   textChannels = serverInfo.text || []; voiceChannels = serverInfo.voice || [];
+  $('homeSidebar').style.display='none'; $('serverSidebar').style.display='block';
   $('sidebar').style.display='flex'; $('members').style.display='';
   applyServerHeader(); renderRail(); applyOwnerUI(); applyCatCollapse(); renderMembers();
   $('friendsView').style.display='none';
@@ -1039,9 +1058,10 @@ async function openServer(sid){
 }
 function goHome(){
   currentServer=null; currentDM=null; serverInfo={}; textChannels=[]; voiceChannels=[]; currentChannel=null;
-  renderRail(); renderChannels(); renderMembers();
+  $('homeSidebar').style.display='block'; $('serverSidebar').style.display='none';
+  renderRail(); renderMembers();
   $('serverNameText').textContent='Ana Sayfa';
-  showFriends();
+  fetchDMList(); showFriends();
 }
 function openServerModal(){ $('serverModalErr').textContent=''; $('newServerName').value=''; $('joinCode').value=''; openModal('serverModal'); }
 async function createServer(){
@@ -1239,17 +1259,47 @@ function uploadServerIcon(){
 }
 
 // ======== DM (direkt mesaj) ========
+// ======== DM (Direkt Mesajlar) ========
+let dmConversations = [];          // [{user,lastTs,lastText}]
+let dmUnread = {};                 // userLower -> sayi
+function totalDMUnread(){ let n=0; for(const k in dmUnread) n+=dmUnread[k]; return n; }
+function fetchDMList(){
+  fetch('/api/dm-list?token='+encodeURIComponent(token)).then(r=>r.json()).then(list=>{
+    dmConversations = list||[]; renderDMList();
+  }).catch(()=>{});
+}
+function renderDMList(){
+  const el=$('dmList'); if(!el) return;
+  if(!dmConversations.length){ el.innerHTML='<div style="color:var(--muted);padding:8px 12px;font-size:13px">Henuz mesajin yok. Bir arkadasina yaz!</div>'; return; }
+  el.innerHTML = dmConversations.map(d=>{
+    const u=dmUnread[d.user.toLowerCase()]||0;
+    const online=onlineUsers.some(o=>o.user.toLowerCase()===d.user.toLowerCase());
+    const active = currentDM && currentDM.toLowerCase()===d.user.toLowerCase();
+    return `<div class="dm-row ${active?'active':''}" onclick="openDM('${esc(d.user)}')">${avaHTML(d.user,28)}`+
+      `<span class="dn">${esc(d.user)}</span>${u?`<span class="dm-badge">${u>99?'99+':u}</span>`:''}</div>`;
+  }).join('');
+}
+function bumpDM(user, text){   // konusmayi en uste tasi / ekle
+  const k=user.toLowerCase();
+  dmConversations = dmConversations.filter(d=>d.user.toLowerCase()!==k);
+  dmConversations.unshift({ user, lastTs:Date.now(), lastText:String(text||'').slice(0,40) });
+  renderDMList();
+}
 function openDM(user){
   if(!user) return;
-  currentDM = user; cancelReply(); typingState={}; renderTyping();
+  currentServer=null; currentDM = user; cancelReply(); typingState={}; renderTyping();
+  dmUnread[user.toLowerCase()]=0; updateReqBadge(); renderRail();
   closeModal('profileModal');
+  $('homeSidebar').style.display='block'; $('serverSidebar').style.display='none';
+  $('serverNameText').textContent='Ana Sayfa';
   $('friendsView').style.display='none'; $('videoArea').style.display='none'; $('controls').style.display='none';
   $('messages').style.display='block'; $('inputbar').style.display='block';
   $('topIcon').textContent='@'; $('topName').textContent=user;
   $('msgInput').placeholder=`@${user} kullanicisina mesaj...`;
-  renderChannels();
+  renderDMList();
   fetch('/api/dm?token='+encodeURIComponent(token)+'&with='+encodeURIComponent(user))
     .then(r=>r.json()).then(list=>{
+      if(currentDM!==user) return;
       lastMsgUser=null; lastMsgTs=0;
       $('messages').innerHTML = `<div class="ch-welcome"><div class="ico">@</div><h2>${esc(user)}</h2>`+
         `<p>Bu, <b>${esc(user)}</b> ile ozel sohbetinin baslangici.</p></div>`;
@@ -1557,8 +1607,8 @@ function renderFriends(){
   $('friendsContent').innerHTML=html;
 }
 function updateReqBadge(){
-  const n=(myFriends.requests||[]).length; const b=$('reqBadge');
-  if(n>0){ b.style.display='block'; b.textContent=n; } else b.style.display='none';
+  const n=(myFriends.requests||[]).length + totalDMUnread(); const b=$('reqBadge');
+  if(n>0){ b.style.display='block'; b.textContent=n>99?'99+':n; } else b.style.display='none';
 }
 
 // ======== Modallar / cekmeceler ========

@@ -528,6 +528,25 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  // ---------- DM konusma listesi ----------
+  if (p === '/api/dm-list'){
+    const me = userFromToken(url.searchParams.get('token'));
+    if (!me){ res.writeHead(401); return res.end('[]'); }
+    const out = [];
+    for (const k in dms){
+      const parts = k.split('|');
+      if (!parts.includes(key(me))) continue;
+      const arr = dms[k]; if (!arr.length) continue;
+      const last = arr[arr.length-1];
+      const otherKey = parts[0]===key(me) ? parts[1] : parts[0];
+      const other = key(last.from)===otherKey ? last.from : (key(last.to)===otherKey ? last.to : otherKey);
+      out.push({ user: other, lastTs: last.ts, lastText: (last.text || (last.file ? '📎 dosya' : '')).slice(0,40) });
+    }
+    out.sort((a,b)=>b.lastTs-a.lastTs);
+    res.writeHead(200, { 'Content-Type':'application/json' });
+    return res.end(JSON.stringify(out));
+  }
+
   // ---------- DM ----------
   if (p === '/api/dm'){
     if (req.method === 'GET'){
