@@ -141,9 +141,29 @@
   .member.off{opacity:.42} .member .mname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .voice-members{margin:0 8px 4px 22px}
   .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
-  .me-bar{padding:8px 10px; background:var(--bg3); display:flex; align-items:center; gap:8px; cursor:pointer}
-  .me-bar:hover{background:#35373c}
-  .me-bar .gear{margin-left:auto; color:var(--muted); font-size:18px}
+  .me-bar{padding:6px 8px; background:var(--bg3); display:flex; align-items:center; gap:4px}
+  .me-id{display:flex; align-items:center; gap:8px; flex:1; min-width:0; padding:4px; border-radius:6px; cursor:pointer}
+  .me-id:hover{background:#3a3d44}
+  .me-text{min-width:0; line-height:1.15}
+  .me-text #meName{font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .me-text .me-sub{font-size:11px; color:var(--muted)}
+  .me-actions{display:flex; align-items:center; gap:1px; flex-shrink:0}
+  .me-ico{width:32px; height:32px; border:none; background:none; color:var(--muted); cursor:pointer;
+    font-size:16px; border-radius:6px; display:flex; align-items:center; justify-content:center}
+  .me-ico:hover{background:#3a3d44; color:var(--text)}
+  .me-ico.muted{color:var(--red)}
+  /* Ses baglanti durumu paneli */
+  .voice-status{background:var(--bg3); padding:8px 10px; display:flex; align-items:center; justify-content:space-between;
+    gap:8px; border-bottom:1px solid #000}
+  .voice-status .vs-info{display:flex; align-items:center; gap:8px; min-width:0}
+  .voice-status .vs-signal{font-size:16px}
+  .voice-status .vs-title{font-size:13px; font-weight:700; color:var(--green)}
+  .voice-status .vs-room{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .vs-leave{background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0}
+  .vs-leave:hover{background:var(--red); color:#fff}
+  /* Rail uzerindeki bildirim rozeti */
+  .rail-item .badge{position:absolute; bottom:-2px; right:-2px; min-width:20px; height:20px; line-height:16px;
+    border:3px solid var(--rail); padding:0 4px}
 
   /* Orta */
   .main{flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0}
@@ -282,7 +302,7 @@
 
     <!-- SUNUCU IKON CUBUGU -->
     <div class="rail" id="rail">
-      <div class="rail-item home" title="Direkt Mesajlar" onclick="openChannel('genel')">💬</div>
+      <div class="rail-item home" id="railHome" title="Ana Sayfa / Arkadaslar & DM" onclick="showFriends()">💬<span class="badge" id="reqBadge" style="display:none">0</span></div>
       <div class="rail-sep"></div>
       <div class="rail-item server active" id="railServer" title="SUICIDEHOTLINE">SH</div>
       <div class="rail-item add" title="Sunucu Ekle" onclick="toast('Yeni sunucu ekleme yakinda 🙂')">+</div>
@@ -295,16 +315,38 @@
         <span style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
       </div>
       <div class="scroll">
-        <div class="nav-btn" onclick="showFriends()">👥 Arkadaslar <span class="badge" id="reqBadge" style="display:none">0</span></div>
         <div class="ch-group">Yazi Kanallari <span class="ch-add" onclick="addChannel('text')" title="Kanal ekle">＋</span></div>
         <div id="textChannels"></div>
         <div class="ch-group">Sesli Kanallar <span class="ch-add" onclick="addChannel('voice')" title="Sesli kanal ekle">＋</span></div>
         <div id="voiceChannels"></div>
       </div>
-      <div class="me-bar" onclick="openSettings()">
-        <div class="ava" id="meAva" style="width:34px;height:34px">?</div>
-        <div id="meName" style="font-weight:600; overflow:hidden; text-overflow:ellipsis"></div>
-        <div class="gear">⚙️</div>
+
+      <!-- Ses baglanti durumu (Discord gibi) -->
+      <div class="voice-status" id="voiceStatus" style="display:none">
+        <div class="vs-info">
+          <span class="vs-signal">📶</span>
+          <div>
+            <div class="vs-title">Ses Bagli</div>
+            <div class="vs-room" id="vsRoom"></div>
+          </div>
+        </div>
+        <button class="vs-leave" onclick="leaveVoice()" title="Baglantiyi kes">✕</button>
+      </div>
+
+      <!-- Kullanici cubugu: avatar + ad + mute/deafen/ayarlar -->
+      <div class="me-bar">
+        <div class="me-id" onclick="openSettings()">
+          <div class="ava" id="meAva" style="width:34px;height:34px">?</div>
+          <div class="me-text">
+            <div id="meName"></div>
+            <div class="me-sub">Cevrimici</div>
+          </div>
+        </div>
+        <div class="me-actions">
+          <button class="me-ico" id="barMic" onclick="toggleMic()" title="Mikrofon (sustur/ac)">🎤</button>
+          <button class="me-ico" id="barDeaf" onclick="toggleDeafen()" title="Sagirlastir">🎧</button>
+          <button class="me-ico" onclick="openSettings()" title="Ayarlar">⚙️</button>
+        </div>
       </div>
     </div>
 
@@ -527,6 +569,7 @@ function toggleRecBlink(){
   applyRecBlink();
 }
 applyRecBlink();
+updateVoiceBtns();
 
 // ======== Kullanici Ayarlari ========
 function openSettings(){
@@ -980,7 +1023,8 @@ async function joinVoice(room){
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
   currentDM=null; currentVoiceRoom=room;
-  micOn=true; deafened=false; applyMic(); updateVoiceBtns();
+  applyMic(); applyRemoteAudio(); updateVoiceBtns();   // onceki mute/deafen tercihini koru
+  $('voiceStatus').style.display='flex'; $('vsRoom').textContent=room;
   $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
   $('videoArea').style.display='block'; $('controls').style.display='flex';
   $('topIcon').textContent='🔊'; $('topName').textContent=room;
@@ -999,7 +1043,7 @@ async function leaveVoice(){
   if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
   if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
   removeTile('local'); currentVoiceRoom=null;
-  micOn=true; deafened=false;
+  $('voiceStatus').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';
   ['btnCam','btnScreen'].forEach(b=>$(b).classList.remove('on'));
   openChannel(currentChannel);
@@ -1056,17 +1100,15 @@ function applyRemoteAudio(){   // sagirken karsi tarafin sesini kapat
   document.querySelectorAll('#videoGrid [id^="tile-"]:not(#tile-local) video').forEach(v=>v.muted=deafened);
 }
 function updateVoiceBtns(){
-  const mic=$('btnMic'), deaf=$('btnDeaf');
-  if(mic){ const off = !micOn || deafened; mic.textContent = off ? '🔇' : '🎤'; mic.classList.toggle('muted', off); }
-  if(deaf){ deaf.textContent = deafened ? '🔇' : '🎧'; deaf.classList.toggle('muted', deafened); }
+  const off = !micOn || deafened;
+  ['btnMic','barMic'].forEach(id=>{ const e=$(id); if(e){ e.textContent = off?'🔇':'🎤'; e.classList.toggle('muted', off); } });
+  ['btnDeaf','barDeaf'].forEach(id=>{ const e=$(id); if(e){ e.textContent = deafened?'🔇':'🎧'; e.classList.toggle('muted', deafened); } });
 }
 function toggleMic(){
-  if(!localStream) return;
   if(deafened){ deafened=false; applyRemoteAudio(); micOn=micBeforeDeafen; } // mute'a basinca sagirlik kalkar
   micOn=!micOn; applyMic(); updateVoiceBtns(); sfx(micOn?'unmute':'mute');
 }
 function toggleDeafen(){
-  if(!localStream) return;
   deafened=!deafened;
   if(deafened){ micBeforeDeafen=micOn; micOn=false; } else { micOn=micBeforeDeafen; }
   applyMic(); applyRemoteAudio(); updateVoiceBtns(); sfx(deafened?'deafen':'undeafen');
