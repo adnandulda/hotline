@@ -101,7 +101,21 @@
 
   /* Sol kanal cubugu */
   .sidebar{width:240px; background:var(--bg2); display:flex; flex-direction:column; flex-shrink:0; z-index:30;
-    border-right:1px solid var(--border)}
+    border-right:1px solid var(--border); position:relative}
+  /* Durum menusu */
+  .status-menu{position:absolute; bottom:56px; left:8px; right:8px; background:#111214; border:1px solid var(--border);
+    border-radius:8px; padding:6px; display:none; z-index:40; box-shadow:0 8px 24px rgba(0,0,0,.6)}
+  .status-menu.show{display:block}
+  .sm-opt{display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:5px; cursor:pointer; font-size:14px}
+  .sm-opt:hover{background:#3a3d44}
+  .sdot{width:10px; height:10px; border-radius:50%; flex-shrink:0}
+  .sm-sep{height:1px; background:var(--border); margin:6px 4px}
+  .sm-input{width:100%; background:var(--bg3); border:1px solid var(--border); color:var(--text); border-radius:6px;
+    padding:8px; outline:none; margin-bottom:4px; font-size:13px}
+  .sm-save{color:var(--accent2); justify-content:center}
+  /* @bahsetme */
+  .mention{background:rgba(88,101,242,.3); color:#c9cdfb; border-radius:4px; padding:0 3px; font-weight:600; cursor:pointer}
+  .msg.mentioned{background:rgba(240,178,50,.10); border-left:3px solid #f0b232; border-radius:3px}
   .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
     display:flex; align-items:center; gap:9px}
   .rec-dot{width:12px; height:12px; border-radius:50%; background:#ff3b30; flex-shrink:0;
@@ -375,12 +389,23 @@
       </div>
 
       <!-- Kullanici cubugu: avatar + ad + mute/deafen/ayarlar -->
+      <!-- Durum menusu -->
+      <div class="status-menu" id="statusMenu">
+        <div class="sm-opt" onclick="setStatus('online')"><span class="sdot" style="background:#23a55a"></span> Cevrimici</div>
+        <div class="sm-opt" onclick="setStatus('idle')"><span class="sdot" style="background:#f0b232"></span> Bosta</div>
+        <div class="sm-opt" onclick="setStatus('dnd')"><span class="sdot" style="background:#f23f43"></span> Rahatsiz Etmeyin</div>
+        <div class="sm-opt" onclick="setStatus('invisible')"><span class="sdot" style="background:#80848e"></span> Gorunmez</div>
+        <div class="sm-sep"></div>
+        <input id="customStatusInput" class="sm-input" placeholder="Ozel durum yaz..." maxlength="80" onkeydown="if(event.key==='Enter')saveCustomStatus()">
+        <div class="sm-opt sm-save" onclick="saveCustomStatus()">💬 Ozel durumu kaydet</div>
+      </div>
+
       <div class="me-bar">
-        <div class="me-id" onclick="openSettings()">
-          <div class="ava" id="meAva" style="width:34px;height:34px">?</div>
-          <div class="me-text">
+        <div class="me-id">
+          <div class="ava" id="meAva" style="width:34px;height:34px" onclick="event.stopPropagation();toggleStatusMenu()" title="Durumunu degistir">?</div>
+          <div class="me-text" onclick="openSettings()">
             <div id="meName"></div>
-            <div class="me-sub">Cevrimici</div>
+            <div class="me-sub" id="meSub">Cevrimici</div>
           </div>
         </div>
         <div class="me-actions">
@@ -675,6 +700,7 @@ function startSession(t, name){
   localStorage.setItem('username', username);
   $('login').style.display='none'; $('app').style.display='block';
   $('meName').textContent = username;
+  ensureNotifPerm();
   connect();
 }
 async function doLogin(){
@@ -740,6 +766,7 @@ function handle(m){
     case 'init':
       textChannels=m.textChannels; voiceChannels=m.voiceChannels;
       myProfile = m.me || myProfile; cacheProfile(username, myProfile);
+      myStatus = myProfile.status || 'online'; myCustomStatus = myProfile.customStatus || '';
       myFriends = m.friends || myFriends;
       if(m.server) applyServer(m.server);
       if(!textChannels.includes(currentChannel)) currentChannel = textChannels[0] || 'genel';
@@ -750,16 +777,16 @@ function handle(m){
       cacheProfile(m.user, {avatar:m.avatar});
       if(typingState[m.user]){ delete typingState[m.user]; renderTyping(); }
       const viewing = !currentDM && !inVoiceView() && m.channel===currentChannel;
+      const fromOther = m.user.toLowerCase()!==username.toLowerCase();
       if(viewing){ appendMessage(m); }
-      else if(m.user.toLowerCase()!==username.toLowerCase()){
-        unread[m.channel]=(unread[m.channel]||0)+1; renderChannels();
-      }
+      else if(fromOther){ unread[m.channel]=(unread[m.channel]||0)+1; renderChannels(); }
+      if(fromOther && mentionsMe(m.text)) notify('#'+m.channel+' — '+m.user, m.text);
       break;
     }
     case 'message-edit': {
       if(currentDM || m.channel!==currentChannel) break;
       const t=msgEl(m.msgId)&&msgEl(m.msgId).querySelector('.text');
-      if(t){ t.dataset.raw=m.text; t.innerHTML=esc(m.text)+'<span class="edited">(duzenlendi)</span>'; }
+      if(t){ t.dataset.raw=m.text; t.innerHTML=renderText(m.text)+'<span class="edited">(duzenlendi)</span>'; }
       break;
     }
     case 'message-delete': {
@@ -785,7 +812,7 @@ function handle(m){
       break;
     case 'profile-update':
       cacheProfile(m.user, m.profile);
-      if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; refreshMe(); }
+      if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; myStatus=m.profile.status||'online'; myCustomStatus=m.profile.customStatus||''; refreshMe(); }
       renderMembers(lastMembers); break;
     case 'channels':
       textChannels=m.textChannels||textChannels; voiceChannels=m.voiceChannels||voiceChannels;
@@ -801,6 +828,7 @@ function handle(m){
         appendMessage({ user:m.from, text:m.text, file:m.file, ts:m.ts, avatar:m.avatar });
       } else if(m.from.toLowerCase()!==username.toLowerCase()){
         toast('💬 '+m.from+': '+String(m.text||'').slice(0,40));
+        notify('💬 '+m.from, m.text);
       }
       break;
     }
@@ -826,6 +854,53 @@ function refreshMe(){
   const a = $('meAva');
   if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; }
   else { a.style.backgroundImage=''; a.textContent=initials(username); }
+  updateMyStatus();
+}
+
+// ======== Durum (status) ========
+function statusInfo(status, online){
+  if(!online) return { color:'#80848e', label:'Cevrimdisi', emoji:'⚫' };
+  const map={ online:{color:'#23a55a',label:'Cevrimici',emoji:'🟢'}, idle:{color:'#f0b232',label:'Bosta',emoji:'🌙'},
+    dnd:{color:'#f23f43',label:'Rahatsiz Etmeyin',emoji:'⛔'}, invisible:{color:'#80848e',label:'Gorunmez',emoji:'⚫'} };
+  return map[status] || map.online;
+}
+let myStatus='online', myCustomStatus='';
+function updateMyStatus(){
+  const si=statusInfo(myStatus, true);
+  const sub=$('meSub'); if(sub) sub.textContent = myCustomStatus || si.label;
+}
+function toggleStatusMenu(){
+  const sm=$('statusMenu'); const open=sm.classList.toggle('show');
+  if(open) $('customStatusInput').value = myCustomStatus || '';
+}
+function setStatus(s){
+  myStatus=s; updateMyStatus(); $('statusMenu').classList.remove('show');
+  fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,status:s})});
+}
+function saveCustomStatus(){
+  myCustomStatus=$('customStatusInput').value.trim(); updateMyStatus(); $('statusMenu').classList.remove('show');
+  fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,customStatus:myCustomStatus})});
+}
+
+// ======== @bahsetme ========
+function isKnownUser(name){
+  const n=name.toLowerCase();
+  return n===username.toLowerCase() || lastMembers.some(m=>m.user.toLowerCase()===n) || !!profileCache[n];
+}
+function renderText(text){
+  return esc(text||'').replace(/@([A-Za-z0-9_]+)/g, (full,name)=>
+    isKnownUser(name) ? `<span class="mention" onclick="openProfile('${name}')">@${name}</span>` : full);
+}
+function mentionsMe(text){
+  if(!text || !username) return false;
+  return new RegExp('@'+username.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Za-z0-9_])','i').test(text);
+}
+
+// ======== Bildirimler ========
+function ensureNotifPerm(){ try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
+function notify(title, body){
+  sfx('ping');
+  try{ if('Notification' in window && Notification.permission==='granted' && document.hidden) new Notification(title,{body:(body||'').slice(0,120)}); }catch(e){}
 }
 function applyServer(s){
   if(!s) return; serverInfo = s;
@@ -988,7 +1063,8 @@ function appendMessage(m){
     content = (m.file.mime||'').startsWith('image/')
       ? `<img class="att" src="${m.file.url}" alt="">`
       : `<a class="file" href="${m.file.url}" download="${esc(m.file.name)}" target="_blank">📎 ${esc(m.file.name)}</a>`;
-  } else content = `<div class="text" data-raw="${esc(m.text||'')}">${esc(m.text)}${m.edited?'<span class="edited">(duzenlendi)</span>':''}</div>`;
+  } else content = `<div class="text" data-raw="${esc(m.text||'')}">${renderText(m.text)}${m.edited?'<span class="edited">(duzenlendi)</span>':''}</div>`;
+  const mentioned = !currentDM && mentionsMe(m.text);
   const interactive = !currentDM && !!m.id;
   const reply = (!currentDM) ? replyPreviewHTML(m) : '';
   const reactions = interactive ? `<div class="reactions">${reactionsHTML(m)}</div>` : '';
@@ -1006,6 +1082,7 @@ function appendMessage(m){
       <span class="name" onclick="openProfile('${esc(m.user)}')">${esc(m.user)}</span>
       <span class="time">${time}</span></div>${content}${reactions}</div>${actions}`;
   }
+  if(mentioned) el.classList.add('mentioned');
   $('messages').appendChild(el);
   lastMsgUser=m.user; lastMsgTs=m.ts;
   $('messages').scrollTop=$('messages').scrollHeight;
@@ -1082,7 +1159,10 @@ function openEmojiInput(ev){
   ev.stopPropagation();
   showEmojiPop(ev.clientX, ev.clientY, emo=>{ $('msgInput').value+=emo; $('msgInput').focus(); });
 }
-document.addEventListener('click', e=>{ if(!e.target.closest('.emoji-pop') && !e.target.closest('[onclick*="EmojiInput"]') && !e.target.closest('[onclick*="ReactPicker"]')) closeEmojiPop(); });
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.emoji-pop') && !e.target.closest('[onclick*="EmojiInput"]') && !e.target.closest('[onclick*="ReactPicker"]')) closeEmojiPop();
+  if(!e.target.closest('#statusMenu') && !e.target.closest('#meAva')) $('statusMenu').classList.remove('show');
+});
 
 // --- Yaziyor... gostergesi ---
 let typingState={}, lastTypingSent=0, typingTick=null;
@@ -1115,8 +1195,10 @@ function renderMembers(members){
   $('onlineCount').textContent = on.length;
   const row = (u,online)=>{
     const crown = (serverInfo.owner && u.user.toLowerCase()===serverInfo.owner.toLowerCase()) ? ' <span title="Sunucu sahibi">👑</span>' : '';
-    return `<div class="member ${online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
-    `<span class="mname">${esc(u.user)}${crown}</span>${online?'<span class="dot"></span>':''}</div>`;
+    const si = statusInfo(u.status, online);
+    const title = u.customStatus ? ` title="${esc(u.customStatus)}"` : '';
+    return `<div class="member ${online?'':'off'}"${title} onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
+    `<span class="mname">${esc(u.user)}${crown}</span><span class="dot" style="background:${si.color}"></span></div>`;
   };
   let html = on.map(u=>row(u,true)).join('');
   if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(u=>row(u,false)).join('');
@@ -1131,7 +1213,8 @@ function openProfile(user){
     const a=$('pmAva');
     if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
     $('pmName').textContent=p.user;
-    $('pmStat').textContent = p.online ? '🟢 Cevrimici' : '⚫ Cevrimdisi';
+    const si=statusInfo(p.status, p.online);
+    $('pmStat').textContent = `${si.emoji} ${si.label}` + (p.customStatus ? ' · '+p.customStatus : '');
     $('pmBio').textContent = p.bio || 'Henuz bir sey yazmamis.';
     // aksiyon butonlari
     const act=$('pmActions'); act.innerHTML='';
@@ -1348,7 +1431,8 @@ function sfx(name){
     const seqs={
       join:[[523,.09],[784,.12]], leave:[[659,.09],[392,.14]],
       mute:[[440,.10]], unmute:[[660,.10]],
-      deafen:[[440,.08],[300,.13]], undeafen:[[500,.08],[720,.13]]
+      deafen:[[440,.08],[300,.13]], undeafen:[[500,.08],[720,.13]],
+      ping:[[880,.07],[1175,.10]]
     };
     const seq=seqs[name]; if(!seq) return;
     let t=_actx.currentTime;

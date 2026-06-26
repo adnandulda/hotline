@@ -77,7 +77,8 @@ const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 
 function getProfile(user){
   const p = profiles[key(user)] || {};
-  return { user, avatar: p.avatar || null, bio: p.bio || '' };
+  return { user, avatar: p.avatar || null, bio: p.bio || '',
+    status: p.status || 'online', customStatus: p.customStatus || '' };
 }
 function getFriendData(user){
   if (!friends[key(user)]) friends[key(user)] = { friends: [], requests: [] };
@@ -119,12 +120,16 @@ function broadcastPresence(){
   // Tum kayitli uyeler + cevrimici/cevrimdisi durumu (sagda hep gorunur)
   const seen = new Set();
   const members = [];
-  for (const u of allUsernames()){
-    seen.add(key(u));
-    members.push({ user: u, avatar: getProfile(u).avatar, online: onlineKeys.has(key(u)) });
-  }
+  const mkMember = (u) => {
+    const prof = getProfile(u);
+    const connected = onlineKeys.has(key(u));
+    const invisible = prof.status === 'invisible';
+    return { user: u, avatar: prof.avatar, online: connected && !invisible,
+      status: prof.status, customStatus: prof.customStatus };
+  };
+  for (const u of allUsernames()){ seen.add(key(u)); members.push(mkMember(u)); }
   for (const [id, c] of clients){   // hesabi olmayan ama bagli (olmamali) -> yine de ekle
-    if (!seen.has(key(c.user))){ seen.add(key(c.user)); members.push({ user: c.user, avatar: getProfile(c.user).avatar, online: true }); }
+    if (!seen.has(key(c.user))){ seen.add(key(c.user)); members.push(mkMember(c.user)); }
   }
   const voice = {};
   for (const room of VOICE_CHANNELS){
@@ -460,6 +465,22 @@ const server = http.createServer((req, res) => {
       if (typeof data.bio === 'string') profiles[k].bio = data.bio.slice(0, 300);
       saveJSON(PROFILES_FILE, profiles);
       broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Durum (cevrimici/bosta/dnd/gorunmez) + ozel durum ----------
+  if (p === '/api/status' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c){ res.writeHead(401); return res.end(); }
+      const k = key(c.user);
+      profiles[k] = profiles[k] || {};
+      if (['online','idle','dnd','invisible'].includes(data.status)) profiles[k].status = data.status;
+      if (typeof data.customStatus === 'string') profiles[k].customStatus = data.customStatus.slice(0, 80);
+      saveJSON(PROFILES_FILE, profiles);
+      broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
+      broadcastPresence();
       res.writeHead(200); res.end('ok');
     });
   }
