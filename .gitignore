@@ -9,6 +9,9 @@ data/profiles.json
 data/channels.json
 data/server.json
 data/dms.json
+data/servers.json
+data/invites.json
+data/history.json
 
 # Yuklenen dosyalar
 uploads/

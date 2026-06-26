@@ -57,6 +57,7 @@
   .rail-item.server:hover, .rail-item.home:hover{background:var(--accent); color:#fff}
   .rail-item.active{border-radius:16px}
   .rail-item.active::before{content:''; position:absolute; left:-12px; width:4px; height:40px; background:#fff; border-radius:0 4px 4px 0}
+  .rail-item.has-unread:not(.active)::before{content:''; position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:8px; height:8px; background:#fff; border-radius:50%}
   .rail-item.home{background:var(--accent); color:#fff}
   .rail-item.add{color:var(--green); font-size:26px; font-weight:400}
   .rail-item.add:hover{background:var(--green); color:#fff}
@@ -354,10 +355,10 @@
 
     <!-- SUNUCU IKON CUBUGU -->
     <div class="rail" id="rail">
-      <div class="rail-item home" id="railHome" title="Ana Sayfa / Arkadaslar & DM" onclick="showFriends()">💬<span class="badge" id="reqBadge" style="display:none">0</span></div>
+      <div class="rail-item home" id="railHome" title="Ana Sayfa / Arkadaslar & DM" onclick="goHome()">💬<span class="badge" id="reqBadge" style="display:none">0</span></div>
       <div class="rail-sep"></div>
-      <div class="rail-item server active" id="railServer" title="SUICIDEHOTLINE">SH</div>
-      <div class="rail-item add" title="Sunucu Ekle" onclick="toast('Yeni sunucu ekleme yakinda 🙂')">+</div>
+      <div id="railServers"></div>
+      <div class="rail-item add" title="Sunucu olustur / katil" onclick="openServerModal()">+</div>
     </div>
 
     <!-- SOL -->
@@ -619,18 +620,39 @@
 <!-- Emoji secici (tepki + mesaj kutusu) -->
 <div class="emoji-pop" id="emojiPop"></div>
 
+<!-- Sunucu olustur / katil -->
+<div class="modal-bg" id="serverModal" onclick="if(event.target===this)closeModal('serverModal')">
+  <div class="modal">
+    <div class="banner"></div>
+    <div class="pbody">
+      <h2 style="margin-top:12px">Sunucu</h2>
+      <div class="label" style="margin-top:8px">Kendi sunucunu olustur</div>
+      <input id="newServerName" placeholder="Sunucu adi" maxlength="40"
+        style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);outline:none;margin-bottom:8px">
+      <button class="btn" onclick="createServer()">➕ Sunucu Olustur</button>
+      <div class="label" style="margin-top:18px">Davet koduyla katil</div>
+      <input id="joinCode" placeholder="Davet kodu (orn. 228887c3)"
+        style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);outline:none;margin-bottom:8px">
+      <button class="btn sec" onclick="joinServer()">🔗 Sunucuya Katil</button>
+      <div class="auth-err" id="serverModalErr" style="text-align:center;margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ======== Durum ========
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 let username = '';
 let token = localStorage.getItem('token') || '';
-let currentChannel = 'genel';
+let currentChannel = null;
 let currentDM = null;                 // DM modunda: karsi kullanici adi
-let serverInfo = { name:'SUICIDEHOTLINE', icon:null };
+let myServers = [];                   // [{id,name,icon,owner}]
+let currentServer = null;             // acik sunucu id
+let serverInfo = {};                  // acik sunucunun tam verisi {id,name,icon,owner,members,text,voice}
 let textChannels = [], voiceChannels = [];
 let es = null, presenceVoice = {};
-let lastMembers = [];
-let unread = {};                      // kanal -> okunmamis mesaj sayisi
+let onlineUsers = [];                 // cevrimici kullanicilar (presence)
+let unread = {};                      // "serverId#kanal" -> okunmamis sayisi
 let myProfile = { avatar:null, bio:'' };
 let myFriends = { friends:[], requests:[] };
 const profileCache = {};            // username -> {avatar, bio}
@@ -779,11 +801,11 @@ async function tryAutoLogin(){
 ['regName','regEmail','regPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doRegister(); }));
 // Yazarken "yaziyor..." sinyali (en fazla 2 sn'de bir)
 $('msgInput').addEventListener('input', ()=>{
-  if(currentDM || !currentChannel) return;
+  if(currentDM || !currentServer || !currentChannel) return;
   const now=Date.now();
   if(now-lastTypingSent>2000){ lastTypingSent=now;
     fetch('/api/typing',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:clientId,channel:currentChannel})}).catch(()=>{});
+      body:JSON.stringify({id:clientId,server:currentServer,channel:currentChannel})}).catch(()=>{});
   }
 });
 tryAutoLogin();
@@ -796,63 +818,74 @@ function connect(){
 function handle(m){
   switch(m.type){
     case 'init':
-      textChannels=m.textChannels; voiceChannels=m.voiceChannels;
       myProfile = m.me || myProfile; cacheProfile(username, myProfile);
       myStatus = myProfile.status || 'online'; myCustomStatus = myProfile.customStatus || '';
       myFriends = m.friends || myFriends;
-      if(m.server) applyServer(m.server);
-      if(!textChannels.includes(currentChannel)) currentChannel = textChannels[0] || 'genel';
-      refreshMe(); renderChannels(); applyCatCollapse(); applyOwnerUI();
-      renderMessages(m.history[currentChannel]||[]); updateReqBadge();
+      myServers = m.servers || [];
+      refreshMe(); updateReqBadge(); renderRail();
+      if(myServers.length) openServer(myServers[0].id); else goHome();
       break;
     case 'message': {
       cacheProfile(m.user, {avatar:m.avatar});
-      if(typingState[m.user]){ delete typingState[m.user]; renderTyping(); }
-      const viewing = !currentDM && !inVoiceView() && m.channel===currentChannel;
+      const viewing = !currentDM && m.server===currentServer && !inVoiceView() && m.channel===currentChannel;
       const fromOther = m.user.toLowerCase()!==username.toLowerCase();
-      if(viewing){ appendMessage(m); }
-      else if(fromOther){ unread[m.channel]=(unread[m.channel]||0)+1; renderChannels(); }
+      if(viewing){ if(typingState[m.user]){ delete typingState[m.user]; renderTyping(); } appendMessage(m); }
+      else if(fromOther){ unread[m.server+'#'+m.channel]=(unread[m.server+'#'+m.channel]||0)+1; renderChannels(); renderRail(); }
       if(fromOther && mentionsMe(m.text)) notify('#'+m.channel+' — '+m.user, m.text);
       break;
     }
     case 'message-edit': {
-      if(currentDM || m.channel!==currentChannel) break;
+      if(currentDM || m.server!==currentServer || m.channel!==currentChannel) break;
       const t=msgEl(m.msgId)&&msgEl(m.msgId).querySelector('.text');
       if(t){ t.dataset.raw=m.text; t.innerHTML=renderText(m.text)+'<span class="edited">(duzenlendi)</span>'; }
       break;
     }
     case 'message-delete': {
-      if(currentDM || m.channel!==currentChannel) break;
+      if(currentDM || m.server!==currentServer || m.channel!==currentChannel) break;
       const el=msgEl(m.msgId); if(el) el.remove();
       break;
     }
     case 'reaction': {
-      if(currentDM || m.channel!==currentChannel) break;
+      if(currentDM || m.server!==currentServer || m.channel!==currentChannel) break;
       const el=msgEl(m.msgId); const r=el&&el.querySelector('.reactions');
       if(r) r.innerHTML=reactionsHTML({id:m.msgId, reactions:m.reactions});
       break;
     }
     case 'typing':
-      if(!currentDM && m.channel===currentChannel) noticeTyping(m.user);
+      if(!currentDM && m.server===currentServer && m.channel===currentChannel) noticeTyping(m.user);
       break;
     case 'presence':
-      (m.users||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
-      (m.members||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
-      lastUsers = m.users || lastUsers;
-      renderMembers(m.members); presenceVoice=m.voice||{}; renderChannels();
+      onlineUsers = m.users || onlineUsers;
+      onlineUsers.forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
+      presenceVoice = (m.voice && currentServer && m.voice[currentServer]) || {};
+      renderMembers(); renderChannels();
       if($('friendsView').style.display==='block') renderFriends();
       break;
     case 'profile-update':
       cacheProfile(m.user, m.profile);
       if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; myStatus=m.profile.status||'online'; myCustomStatus=m.profile.customStatus||''; refreshMe(); }
-      renderMembers(lastMembers); break;
+      renderMembers(); break;
     case 'channels':
-      textChannels=m.textChannels||textChannels; voiceChannels=m.voiceChannels||voiceChannels;
-      if(!currentDM && !inVoiceView() && !textChannels.includes(currentChannel)){
-        openChannel(textChannels[0] || 'genel');
-      }
+      if(m.server!==currentServer) break;
+      serverInfo.text=m.text||serverInfo.text; serverInfo.voice=m.voice||serverInfo.voice;
+      textChannels=serverInfo.text; voiceChannels=serverInfo.voice;
+      if(!currentDM && !inVoiceView() && !textChannels.includes(currentChannel)) openChannel(textChannels[0]||null);
       renderChannels(); break;
-    case 'server': applyServer(m.server); break;
+    case 'servers':
+      myServers = m.servers || myServers; renderRail(); break;
+    case 'server-update': {
+      const sm=m.server; const i=myServers.findIndex(s=>s.id===sm.id);
+      if(i>=0) myServers[i]={...myServers[i], ...sm};
+      if(currentServer===sm.id){ serverInfo.name=sm.name; serverInfo.icon=sm.icon; applyServerHeader(); }
+      renderRail(); break;
+    }
+    case 'server-members':
+      if(m.server===currentServer){ serverInfo.members=m.members; renderMembers(); }
+      break;
+    case 'server-deleted':
+      myServers = myServers.filter(s=>s.id!==m.server);
+      if(currentServer===m.server){ currentServer=null; serverInfo={}; if(myServers.length) openServer(myServers[0].id); else goHome(); }
+      renderRail(); break;
     case 'dm': {
       cacheProfile(m.from, {avatar:m.avatar});
       const other = (m.from.toLowerCase()===username.toLowerCase()) ? m.to : m.from;
@@ -875,8 +908,8 @@ function handle(m){
       myFriends = m.friends; updateReqBadge();
       if($('friendsView').style.display==='block') renderFriends(); break;
     case 'voice-peers': m.peers.forEach(pid=>callPeer(pid)); break;
-    case 'voice-join': if(currentVoiceRoom && m.room===currentVoiceRoom) sfx('join'); break;
-    case 'voice-leave': if(currentVoiceRoom && m.room===currentVoiceRoom) sfx('leave'); removePeer(m.id); break;
+    case 'voice-join': if(currentVoiceRoom && m.server===currentServer && m.room===currentVoiceRoom) sfx('join'); break;
+    case 'voice-leave': if(currentVoiceRoom && m.server===currentServer && m.room===currentVoiceRoom) sfx('leave'); removePeer(m.id); break;
     case 'signal': onSignal(m.from, m.signal); break;
   }
 }
@@ -917,7 +950,7 @@ function saveCustomStatus(){
 // ======== @bahsetme ========
 function isKnownUser(name){
   const n=name.toLowerCase();
-  return n===username.toLowerCase() || lastMembers.some(m=>m.user.toLowerCase()===n) || !!profileCache[n];
+  return n===username.toLowerCase() || (serverInfo.members||[]).some(m=>m.toLowerCase()===n) || onlineUsers.some(o=>o.user.toLowerCase()===n) || !!profileCache[n];
 }
 function renderText(text){
   return esc(text||'').replace(/@([A-Za-z0-9_]+)/g, (full,name)=>
@@ -934,18 +967,75 @@ function notify(title, body){
   sfx('ping');
   try{ if('Notification' in window && Notification.permission==='granted' && document.hidden) new Notification(title,{body:(body||'').slice(0,120)}); }catch(e){}
 }
-function applyServer(s){
-  if(!s) return; serverInfo = s;
-  $('serverNameText').textContent = s.name || 'SUICIDEHOTLINE';
-  const rs = $('railServer');
-  if(s.icon){ rs.style.backgroundImage=`url('${s.icon}')`; rs.textContent=''; }
-  else { rs.style.backgroundImage=''; rs.textContent=(s.name||'S').slice(0,2).toUpperCase(); }
-  rs.title = s.name || '';
-  applyRecBlink(); applyOwnerUI(); renderChannels();
+// ======== Sunucular (rail + acma + olusturma + katilma) ========
+function srvUnread(sid){
+  let n=0; for(const k in unread){ if(k.startsWith(sid+'#')) n+=unread[k]; } return n;
+}
+function renderRail(){
+  $('railServers').innerHTML = myServers.map(s=>{
+    const u=srvUnread(s.id);
+    const bg = s.icon ? `background-image:url('${s.icon}')` : '';
+    const txt = s.icon ? '' : (s.name||'S').slice(0,2).toUpperCase();
+    return `<div class="rail-item server ${s.id===currentServer?'active':''} ${u?'has-unread':''}" title="${esc(s.name)}"
+      style="${bg}" onclick="openServer('${s.id}')">${txt}${u?`<span class="badge">${u>99?'99+':u}</span>`:''}</div>`;
+  }).join('');
+  $('railHome').classList.toggle('active', !currentServer && !currentDM);
+}
+function applyServerHeader(){
+  $('serverNameText').textContent = serverInfo.name || 'Sunucu';
+  applyRecBlink();
+}
+async function openServer(sid){
+  currentDM=null;
+  try{
+    const r=await fetch('/api/server-data?token='+encodeURIComponent(token)+'&server='+encodeURIComponent(sid));
+    if(!r.ok){ toast('Sunucuya erisilemedi'); return; }
+    serverInfo = await r.json();
+  }catch(e){ toast('Baglanti hatasi'); return; }
+  currentServer = sid;
+  textChannels = serverInfo.text || []; voiceChannels = serverInfo.voice || [];
+  $('sidebar').style.display='flex'; $('members').style.display='';
+  applyServerHeader(); renderRail(); applyOwnerUI(); applyCatCollapse(); renderMembers();
+  $('friendsView').style.display='none';
+  // ilk kanali ac
+  if(textChannels.length) openChannel(textChannels.includes(currentChannel)?currentChannel:textChannels[0]);
+  else { currentChannel=null; renderChannels(); $('messages').innerHTML='<div class="ch-welcome"><div class="ico">#</div><h2>Kanal yok</h2><p>Sahip kanal ekleyene kadar bekle.</p></div>'; }
+  closeDrawers();
+}
+function goHome(){
+  currentServer=null; currentDM=null; serverInfo={}; textChannels=[]; voiceChannels=[]; currentChannel=null;
+  renderRail(); renderChannels(); renderMembers();
+  $('serverNameText').textContent='Ana Sayfa';
+  showFriends();
+}
+function openServerModal(){ $('serverModalErr').textContent=''; $('newServerName').value=''; $('joinCode').value=''; openModal('serverModal'); }
+async function createServer(){
+  const name=$('newServerName').value.trim(); const err=$('serverModalErr'); err.textContent='';
+  if(!name){ err.textContent='Sunucu adi gir'; return; }
+  try{
+    const r=await fetch('/api/server-create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,name})});
+    const d=await r.json();
+    if(!r.ok){ err.textContent=d.error||'Olusturulamadi'; return; }
+    if(!myServers.some(s=>s.id===d.server.id)) myServers.push({id:d.server.id,name:d.server.name,icon:d.server.icon,owner:d.server.owner});
+    closeModal('serverModal'); renderRail(); openServer(d.server.id);
+    toast('Sunucu olusturuldu! Davet kodu: '+d.invite);
+  }catch(e){ err.textContent='Baglanti hatasi'; }
+}
+async function joinServer(){
+  const code=$('joinCode').value.trim(); const err=$('serverModalErr'); err.textContent='';
+  if(!code){ err.textContent='Davet kodu gir'; return; }
+  try{
+    const r=await fetch('/api/server-join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,code})});
+    const d=await r.json();
+    if(!r.ok){ err.textContent=d.error||'Katilinamadi'; return; }
+    if(!myServers.some(s=>s.id===d.server.id)) myServers.push({id:d.server.id,name:d.server.name,icon:d.server.icon,owner:d.server.owner});
+    closeModal('serverModal'); renderRail(); openServer(d.server.id);
+    toast('Sunucuya katildin: '+d.server.name);
+  }catch(e){ err.textContent='Baglanti hatasi'; }
 }
 
 // ======== Kanallar ========
-function amOwner(){ return !serverInfo.owner || (username && serverInfo.owner.toLowerCase()===username.toLowerCase()); }
+function amOwner(){ return serverInfo.owner && username && serverInfo.owner.toLowerCase()===username.toLowerCase(); }
 function chToolsHTML(kind,i){
   return amOwner() ? `<span class="ch-tools">
     <span onclick="event.stopPropagation();renameChannel('${kind}',${i})" title="Yeniden adlandir">✎</span>
@@ -953,7 +1043,7 @@ function chToolsHTML(kind,i){
 }
 function renderChannels(){
   $('textChannels').innerHTML = textChannels.map((c,i)=>{
-    const u = unread[c]||0;
+    const u = unread[currentServer+'#'+c]||0;
     return `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''} ${u?'unread':''}" onclick="openChannel('${esc(c)}')">
        <span class="cname"># ${esc(c)}</span>
        ${u?`<span class="ch-unread">${u>99?'99+':u}</span>`:''}${chToolsHTML('text',i)}</div>`;
@@ -975,11 +1065,18 @@ function applyCatCollapse(){
   });
 }
 function applyOwnerUI(){ const show=amOwner(); document.querySelectorAll('.owner-only').forEach(e=>e.style.display = show?'':'none'); }
-function copyInvite(){
-  const url = location.origin || (location.protocol+'//'+location.host);
+async function copyInvite(){
+  if(!currentServer){ toast('Once bir sunucu ac'); return; }
+  let code = serverInfo.invite;
+  if(!code){
+    try{ const r=await fetch('/api/invite?token='+encodeURIComponent(token)+'&server='+encodeURIComponent(currentServer)); code=(await r.json()).code; }catch(e){}
+  }
+  if(!code){ toast('Davet kodu alinamadi'); return; }
+  const link = (location.origin||'') + ' (kod: '+code+')';
+  const text = 'Davet kodu: '+code;
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(url).then(()=>toast('🔗 Davet linki kopyalandi: '+url)).catch(()=>prompt('Davet linki (kopyala):', url));
-  } else prompt('Davet linki (kopyala):', url);
+    navigator.clipboard.writeText(code).then(()=>toast('🔗 Davet kodu kopyalandi: '+code)).catch(()=>prompt('Davet kodu (kopyala):', code));
+  } else prompt('Davet kodu (kopyala):', code);
 }
 
 // ======== Kanal yonetimi ========
@@ -1000,21 +1097,22 @@ function deleteChannel(kind, i){
   chanReq({ action:'delete', kind, name:cur });
 }
 function chanReq(body){
+  if(!currentServer){ toast('Once bir sunucu ac'); return; }
   fetch('/api/channel',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId, ...body})}).then(async r=>{
+    body:JSON.stringify({id:clientId, server:currentServer, ...body})}).then(async r=>{
       if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Islem basarisiz'); }
     }).catch(()=>toast('Baglanti hatasi'));
 }
 
 // ======== Sunucu yonetimi ========
 function saveServerName(){
-  const name = $('svName').value.trim(); if(!name) return;
+  const name = $('svName').value.trim(); if(!name || !currentServer) return;
   fetch('/api/server',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId, name})}).then(()=>toast('Sunucu adi guncellendi'));
+    body:JSON.stringify({id:clientId, server:currentServer, name})}).then(()=>toast('Sunucu adi guncellendi'));
 }
 function uploadServerIcon(){
-  const f=$('serverIconInput').files[0]; if(!f) return;
-  fetch('/api/server-icon',{method:'POST',headers:{'Content-Type':f.type,'X-Client-Id':clientId,'X-Filename':encodeURIComponent(f.name)},body:f})
+  const f=$('serverIconInput').files[0]; if(!f || !currentServer) return;
+  fetch('/api/server-icon',{method:'POST',headers:{'Content-Type':f.type,'X-Client-Id':clientId,'X-Server':currentServer,'X-Filename':encodeURIComponent(f.name)},body:f})
     .then(r=>r.json()).then(d=>{
       const a=$('svIcon'); a.style.backgroundImage=`url('${d.url}')`; a.textContent='';
       $('serverIconInput').value='';
@@ -1043,14 +1141,17 @@ function openDM(user){
 function inVoiceView(){ return $('videoArea').style.display==='block'; }
 
 function openChannel(c){
+  if(!c || !currentServer) return;
   currentDM=null; currentChannel=c; cancelReply(); typingState={}; renderTyping();
-  delete unread[c];
+  delete unread[currentServer+'#'+c];
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
   $('messages').style.display='block'; $('inputbar').style.display='block';
-  renderChannels();
-  fetch('/api/history?channel='+encodeURIComponent(c)).then(r=>r.json()).then(h=>{
+  renderChannels(); renderRail();
+  const sv=currentServer;
+  fetch('/api/history?token='+encodeURIComponent(token)+'&server='+encodeURIComponent(sv)+'&channel='+encodeURIComponent(c)).then(r=>r.json()).then(h=>{
+    if(sv!==currentServer || c!==currentChannel) return;
     h.forEach(m=>cacheProfile(m.user,{avatar:m.avatar})); renderMessages(h);
   }).catch(()=>{});
   closeDrawers();
@@ -1123,7 +1224,7 @@ function appendMessage(m){
 // --- Tepki / yanit / duzenle / sil ---
 function reactMsg(id, emoji){
   fetch('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId, channel:currentChannel, msgId:id, emoji})});
+    body:JSON.stringify({id:clientId, server:currentServer, channel:currentChannel, msgId:id, emoji})});
   closeEmojiPop();
 }
 function openReactPicker(ev, id){
@@ -1133,7 +1234,7 @@ function openReactPicker(ev, id){
 function deleteMsg(id){
   if(!confirm('Bu mesaji silmek istiyor musun?')) return;
   fetch('/api/message-delete',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId, channel:currentChannel, msgId:id})});
+    body:JSON.stringify({id:clientId, server:currentServer, channel:currentChannel, msgId:id})});
 }
 function startEdit(id){
   const el=msgEl(id); if(!el) return;
@@ -1144,7 +1245,7 @@ function startEdit(id){
   inp.onkeydown=(e)=>{
     if(e.key==='Enter'){ e.preventDefault(); const v=inp.value.trim();
       if(v){ fetch('/api/message-edit',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({id:clientId,channel:currentChannel,msgId:id,text:v})}); }
+        body:JSON.stringify({id:clientId,server:currentServer,channel:currentChannel,msgId:id,text:v})}); }
       else cancelEdit(id, raw);
     } else if(e.key==='Escape'){ cancelEdit(id, raw); }
   };
@@ -1168,7 +1269,8 @@ function sendMsg(){
     fetch('/api/dm',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:clientId, to:currentDM, text:t})});
   } else {
-    const body={id:clientId,channel:currentChannel,text:t};
+    if(!currentServer || !currentChannel) return;
+    const body={id:clientId,server:currentServer,channel:currentChannel,text:t};
     if(replyingTo) body.replyTo=replyingTo.id;
     fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     cancelReply();
@@ -1214,26 +1316,28 @@ function renderTyping(){
 }
 function uploadFile(){
   const f=$('fileInput').files[0]; if(!f) return;
+  if(currentDM || !currentServer || !currentChannel){ toast('Once bir kanal ac'); $('fileInput').value=''; return; }
   fetch('/api/upload',{method:'POST',headers:{'Content-Type':f.type||'application/octet-stream',
-    'X-Client-Id':clientId,'X-Channel':encodeURIComponent(currentChannel),'X-Filename':encodeURIComponent(f.name)},
+    'X-Client-Id':clientId,'X-Server':currentServer,'X-Channel':encodeURIComponent(currentChannel),'X-Filename':encodeURIComponent(f.name)},
     body:f}).then(()=>{$('fileInput').value='';});
 }
 
 // ======== Uyeler (cevrimici + cevrimdisi) ========
-let lastUsers=[];
-function renderMembers(members){
-  lastMembers = members || lastMembers;
-  const on = lastMembers.filter(x=>x.online), off = lastMembers.filter(x=>!x.online);
+function onlineInfo(user){ return onlineUsers.find(o=>o.user.toLowerCase()===user.toLowerCase()) || null; }
+function renderMembers(){
+  const memberNames = (serverInfo.members || []);
+  const list = memberNames.map(u=>{ const o=onlineInfo(u); return { user:u, online:!!o, status:o?o.status:'offline', customStatus:o?o.customStatus:'' }; });
+  const on = list.filter(x=>x.online), off = list.filter(x=>!x.online);
   $('onlineCount').textContent = on.length;
-  const row = (u,online)=>{
+  const row = (u)=>{
     const crown = (serverInfo.owner && u.user.toLowerCase()===serverInfo.owner.toLowerCase()) ? ' <span title="Sunucu sahibi">👑</span>' : '';
-    const si = statusInfo(u.status, online);
+    const si = statusInfo(u.status, u.online);
     const title = u.customStatus ? ` title="${esc(u.customStatus)}"` : '';
-    return `<div class="member ${online?'':'off'}"${title} onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
+    return `<div class="member ${u.online?'':'off'}"${title} onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
     `<span class="mname">${esc(u.user)}${crown}</span><span class="dot" style="background:${si.color}"></span></div>`;
   };
-  let html = on.map(u=>row(u,true)).join('');
-  if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(u=>row(u,false)).join('');
+  let html = on.map(row).join('');
+  if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(row).join('');
   $('memberList').innerHTML = html;
 }
 
@@ -1323,7 +1427,7 @@ function renderFriends(){
   }
   html+=`<div class="flist-title">Arkadaslarin — ${frs.length}</div>`;
   html+= frs.length ? frs.map(u=>{
-    const online=lastUsers.some(x=>x.user.toLowerCase()===u.toLowerCase());
+    const online=onlineUsers.some(x=>x.user.toLowerCase()===u.toLowerCase());
     return `<div class="frow">${avaHTML(u,38)}<div class="who"><div class="n">${esc(u)}</div><div class="s">${online?'🟢 Cevrimici':'⚫ Cevrimdisi'}</div></div>
       <button class="mini add" onclick="openDM('${esc(u)}')">💬 Mesaj</button>
       <button class="mini no" onclick="openProfile('${esc(u)}')">Profil</button></div>`;
@@ -1357,12 +1461,14 @@ function toast(msg){
 }
 
 // ======== SESLI / GORUNTULU (WebRTC mesh) ========
+let voiceServer=null;
 async function joinVoice(room){
+  if(!currentServer) return;
   if(currentVoiceRoom===room) return;
   if(currentVoiceRoom) await leaveVoice();
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
-  currentDM=null; currentVoiceRoom=room;
+  currentDM=null; currentVoiceRoom=room; voiceServer=currentServer;
   applyMic(); applyRemoteAudio(); updateVoiceBtns();   // onceki mute/deafen tercihini koru
   $('voiceStatus').style.display='flex'; $('vsRoom').textContent=room;
   $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
@@ -1372,13 +1478,13 @@ async function joinVoice(room){
   renderChannels(); closeDrawers();
   sfx('join');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId,action:'join',room})});
+    body:JSON.stringify({id:clientId,server:voiceServer,action:'join',room})});
 }
 async function leaveVoice(){
   if(!currentVoiceRoom) return;
   sfx('leave');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId,action:'leave',room:currentVoiceRoom})});
+    body:JSON.stringify({id:clientId,server:voiceServer,action:'leave',room:currentVoiceRoom})});
   peers.forEach((pc,id)=>{pc.close();removeTile(id);}); peers.clear();
   if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
   if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
@@ -1415,7 +1521,7 @@ async function onSignal(from,data){
   } else if(data.candidate&&pc){ try{await pc.addIceCandidate(data.candidate);}catch(e){} }
 }
 function signal(to,sig){ fetch('/api/signal',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({to,from:clientId,signal:sig,room:currentVoiceRoom})}); }
+  body:JSON.stringify({to,from:clientId,signal:sig,room:currentVoiceRoom,server:voiceServer})}); }
 function peerLabel(id){ const l=presenceVoice[currentVoiceRoom]||[]; const u=l.find(x=>x.id===id); return u?u.user:'Arkadas'; }
 function removePeer(id){ const pc=peers.get(id); if(pc){pc.close();peers.delete(id);} removeTile(id); }
 
@@ -1577,7 +1683,7 @@ function renegotiateAll(){
   }catch(e){} }); },150);
 }
 window.addEventListener('beforeunload',()=>{ if(currentVoiceRoom) navigator.sendBeacon('/api/voice',
-  new Blob([JSON.stringify({id:clientId,action:'leave',room:currentVoiceRoom})],{type:'application/json'})); });
+  new Blob([JSON.stringify({id:clientId,server:voiceServer,action:'leave',room:currentVoiceRoom})],{type:'application/json'})); });
 </script>
 </body>
 </html>
