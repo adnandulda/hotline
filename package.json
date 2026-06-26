@@ -1,0 +1,12 @@
+{
+  "name": "hotline",
+  "version": "1.0.0",
+  "description": "Suicide Hotline sohbet uygulamasi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
