@@ -138,22 +138,29 @@
     background:#1e1f22; object-fit:cover; aspect-ratio:16/9; border:1px solid #000; display:none}
   #callLocalVideo.show{display:block}
   #callControls{position:absolute; bottom:24px; left:0; right:0; display:flex; gap:14px; justify-content:center}
-  /* Kullanici profil pop-out'u */
-  .popout{position:fixed; width:300px; max-width:92vw; background:#232428; border-radius:10px; z-index:80; display:none;
-    box-shadow:0 8px 30px rgba(0,0,0,.6); overflow:hidden}
-  .po-banner{height:60px; background:linear-gradient(135deg,var(--accent),#3641a8); background-size:cover; background-position:center}
-  .po-ava{position:absolute; top:24px; left:14px; width:72px; height:72px; border-radius:50%; border:6px solid #232428;
+  /* Kullanici profil pop-out'u (modern Discord karti) */
+  .popout{position:fixed; width:320px; max-width:94vw; background:#232428; border-radius:14px; z-index:80; display:none;
+    box-shadow:0 10px 36px rgba(0,0,0,.65); overflow:hidden}
+  .po-banner{height:92px; background:linear-gradient(135deg,var(--accent),#3641a8); background-size:cover; background-position:center}
+  .po-avawrap{position:absolute; top:46px; left:16px; width:84px; height:84px}
+  .po-ava{width:84px; height:84px; border-radius:50%; border:7px solid #232428; box-sizing:border-box;
     background:var(--accent); background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center;
-    font-size:26px; font-weight:700; color:#fff}
-  .po-card{padding:46px 12px 12px}
-  .po-inner{background:#111214; border-radius:8px; padding:12px}
-  .po-name{font-size:20px; font-weight:700; word-break:break-word}
-  .po-status{font-size:13px; color:var(--muted); margin-top:2px}
+    font-size:30px; font-weight:700; color:#fff}
+  .po-statusdot{position:absolute; right:2px; bottom:2px; width:22px; height:22px; border-radius:50%; border:5px solid #232428; background:#80848e}
+  .po-card{padding:42px 12px 12px}
+  .po-inner{background:#111214; border-radius:10px; padding:14px}
+  .po-name{font-size:21px; font-weight:800; word-break:break-word; line-height:1.15}
+  .po-handle{font-size:14px; color:#dbdee1; margin-top:1px}
+  .po-customstatus{font-size:14px; color:var(--text); margin-top:8px}
   .po-sep{height:1px; background:#2b2d31; margin:10px 0}
-  .po-section{margin-bottom:2px}
-  .po-label{font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.4px; margin-bottom:6px}
-  .po-bio{font-size:14px; color:var(--text); white-space:pre-wrap; line-height:1.45; font-family:var(--serif); max-height:120px; overflow:auto}
-  .po-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+  .po-section{margin-top:14px}
+  .po-section:first-of-type{margin-top:14px}
+  .po-label{font-size:11px; font-weight:700; text-transform:uppercase; color:#b5bac1; letter-spacing:.4px; margin-bottom:6px}
+  .po-bio{font-size:14px; color:var(--text); white-space:pre-wrap; line-height:1.45; max-height:120px; overflow:auto}
+  .po-member{font-size:14px; color:var(--text)}
+  .po-note{width:100%; background:none; border:none; color:var(--text); outline:none; font-size:14px; padding:6px 0}
+  .po-note::placeholder{color:var(--muted)}
+  .po-actions{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
   .po-actions .btn{width:auto; flex:1; min-width:90px; padding:9px 12px; font-size:14px}
   .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
     display:flex; align-items:center; gap:9px}
@@ -772,15 +779,19 @@
 
 <!-- Kullanici profil pop-out'u (tiklanan yerin yaninda acilir) -->
 <div class="popout" id="userPopout">
-  <div class="po-banner" id="poBanner"></div>
-  <div class="po-ava" id="poAva"></div>
+  <div class="po-banner" id="poBanner" title="Profil afisi"></div>
+  <div class="po-avawrap"><div class="po-ava" id="poAva"></div><div class="po-statusdot" id="poStatusDot"></div></div>
   <div class="po-card">
     <div class="po-inner">
       <div class="po-name" id="poName"></div>
-      <div class="po-status" id="poStatus"></div>
-      <div class="po-section" id="poBioWrap"><div class="po-sep"></div><div class="po-label">Hakkinda</div><div class="po-bio" id="poBio"></div></div>
-      <div class="po-section" id="poRolesWrap"><div class="po-sep"></div><div class="po-label">Roller</div><div id="poRoles" style="display:flex;flex-wrap:wrap;gap:5px"></div></div>
+      <div class="po-handle" id="poHandle"></div>
+      <div class="po-customstatus" id="poStatus"></div>
+      <div class="po-section" id="poBioWrap"><div class="po-label">Hakkinda</div><div class="po-bio" id="poBio"></div></div>
+      <div class="po-section" id="poMemberWrap"><div class="po-label">Uye Olma Tarihi</div><div class="po-member" id="poMember"></div></div>
+      <div class="po-section" id="poRolesWrap"><div class="po-label">Roller</div><div id="poRoles" style="display:flex;flex-wrap:wrap;gap:5px"></div></div>
       <div id="poAdmin"></div>
+      <div class="po-section" id="poNoteWrap"><div class="po-label">Not (sadece sana gorunur)</div>
+        <input id="poNote" class="po-note" placeholder="Not eklemek icin tikla..." onchange="saveNote()"></div>
       <div class="po-actions" id="poActions"></div>
     </div>
   </div>
@@ -1773,6 +1784,7 @@ function renderMembers(){
 let lastClickX=window.innerWidth/2, lastClickY=window.innerHeight/2;
 document.addEventListener('mousedown', e=>{ lastClickX=e.clientX; lastClickY=e.clientY; }, true);
 function closePopout(){ $('userPopout').style.display='none'; }
+function saveNote(){ const u=$('poNote').dataset.user; if(u) localStorage.setItem('note:'+u.toLowerCase(), $('poNote').value); }
 function positionPopout(el, x, y){
   el.style.display='block';
   const w=el.offsetWidth||300, h=el.offsetHeight||320;
@@ -1784,21 +1796,36 @@ function openProfile(user){
   const cx=lastClickX, cy=lastClickY;
   fetch('/api/get-profile?user='+encodeURIComponent(user)).then(r=>r.json()).then(p=>{
     cacheProfile(user, p);
-    // afis (banner)
+    const meEdit = user.toLowerCase()===username.toLowerCase();
+    // afis (banner) — kendi profilinde tiklayinca duzenle/foto ekle
     const b=$('poBanner');
     if(p.banner) b.style.background=`url('${p.banner}') center/cover`;
     else if(p.bannerColor) b.style.background=p.bannerColor;
     else b.style.background='linear-gradient(135deg,var(--accent),#3641a8)';
-    // avatar
+    b.style.cursor = meEdit ? 'pointer' : '';
+    b.onclick = meEdit ? ()=>{ closePopout(); openEditProfile(); } : null;
+    b.title = meEdit ? 'Afis eklemek/degistirmek icin tikla' : 'Profil afisi';
+    // avatar + durum noktasi
     const a=$('poAva');
     if(p.avatar){ a.style.backgroundImage=`url('${p.avatar}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
-    // ad + durum
+    const si=statusInfo(p.status, p.online);
+    $('poStatusDot').style.background = si.color; $('poStatusDot').title = si.label;
+    // ad + @handle
+    const me = user.toLowerCase()===username.toLowerCase();
     const col=roleColorOf(user);
     $('poName').textContent=p.user; $('poName').style.color=col||'';
-    const si=statusInfo(p.status, p.online);
-    $('poStatus').textContent = `${si.emoji} ${si.label}` + (p.customStatus ? ' · '+p.customStatus : '');
+    $('poHandle').textContent='@'+p.user.toLowerCase().replace(/\s+/g,'');
+    // ozel durum
+    $('poStatus').textContent = p.customStatus || '';
+    $('poStatus').style.display = p.customStatus ? 'block' : 'none';
     // hakkinda
     if(p.bio){ $('poBioWrap').style.display='block'; $('poBio').textContent=p.bio; } else $('poBioWrap').style.display='none';
+    // uye olma tarihi
+    if(p.created){ $('poMemberWrap').style.display='block'; $('poMember').textContent=new Date(p.created).toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'}); }
+    else $('poMemberWrap').style.display='none';
+    // not (sadece sen gorursun, baska kullanicilar icin)
+    const nw=$('poNoteWrap');
+    if(me){ nw.style.display='none'; } else { nw.style.display='block'; $('poNote').dataset.user=user; $('poNote').value=localStorage.getItem('note:'+user.toLowerCase())||''; }
     // roller
     const rw=$('poRolesWrap');
     if(currentServer && (serverInfo.memberRoles||{})[user.toLowerCase()]){

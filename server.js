@@ -641,8 +641,10 @@ const server = http.createServer((req, res) => {
   if (p === '/api/get-profile'){
     const user = url.searchParams.get('user') || '';
     const online = [...clients.values()].some(c => key(c.user) === key(user));
+    let created = null;
+    for (const u of Object.values(users)){ if (key(u.username) === key(user)){ created = u.created; break; } }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ...getProfile(user), online }));
+    return res.end(JSON.stringify({ ...getProfile(user), online, created }));
   }
 
   // ---------- Arkadas islemleri ----------
