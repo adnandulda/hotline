@@ -1,0 +1,7 @@
+{
+  "_aciklama": "Bu dosyayi 'mail-config.json' olarak kopyala ve kendi bilgilerini yaz. Bos birakirsan kodlar maile gitmez, sadece sunucu ekranina yazilir (test modu).",
+  "_uygulama_sifresi_nasil": "Google Hesabin > Guvenlik > 2 Adimli Dogrulama'yi ac > 'Uygulama sifreleri' > yeni sifre olustur (16 hane). Normal Gmail sifren DEGIL, bu uygulama sifresini buraya yaz.",
+  "user": "senin-adresin@gmail.com",
+  "pass": "abcdefghijklmnop",
+  "fromName": "Bizim Discord"
+}

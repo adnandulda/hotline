@@ -9,6 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const tls = require('tls');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -53,6 +54,79 @@ function userFromToken(token){
   return token && sessions[token] ? sessions[token] : null;
 }
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
+
+// --- E-posta gonderme (Gmail SMTP, sifir bagimlilik: sadece tls modulu) ---
+// Ayarlar: data/mail-config.json -> { user, pass, fromName }  (pass = Gmail uygulama sifresi)
+// veya ortam degiskenleri: GMAIL_USER, GMAIL_PASS, GMAIL_FROM_NAME
+const MAIL_FILE = path.join(DATA_DIR, 'mail-config.json');
+function mailConfig(){
+  const f = loadJSON(MAIL_FILE, {});
+  return {
+    user: process.env.GMAIL_USER || f.user || '',
+    pass: process.env.GMAIL_PASS || f.pass || '',
+    fromName: process.env.GMAIL_FROM_NAME || f.fromName || 'Bizim Discord'
+  };
+}
+// Mail ayarli mi? Degilse "test modu": kod sadece sunucu konsoluna yazilir.
+function mailReady(){ const c = mailConfig(); return !!(c.user && c.pass); }
+
+function sendMail({ to, subject, text }, done){
+  const cfg = mailConfig();
+  if (!cfg.user || !cfg.pass){
+    console.log('\n========== [MAIL TEST MODU] ==========');
+    console.log('Alici: ' + to);
+    console.log(text);
+    console.log('======================================\n');
+    return done(null, { consoleOnly: true });
+  }
+  const enc = s => Buffer.from(String(s), 'utf8').toString('base64');
+  let body = String(text).replace(/\r?\n/g, '\r\n').replace(/\r\n\./g, '\r\n..');
+  if (body[0] === '.') body = '.' + body;
+  const message =
+    `From: ${cfg.fromName} <${cfg.user}>\r\n` +
+    `To: ${to}\r\n` +
+    `Subject: =?UTF-8?B?${enc(subject)}?=\r\n` +
+    `MIME-Version: 1.0\r\n` +
+    `Content-Type: text/plain; charset=UTF-8\r\n\r\n` +
+    body + '\r\n.';
+  const seq = [
+    { send: null,                            expect: 220 },  // karsilama
+    { send: 'EHLO localhost',                expect: 250 },
+    { send: 'AUTH LOGIN',                    expect: 334 },
+    { send: enc(cfg.user),                   expect: 334 },
+    { send: enc(cfg.pass),                   expect: 235 },  // giris basarili
+    { send: 'MAIL FROM:<' + cfg.user + '>',  expect: 250 },
+    { send: 'RCPT TO:<' + to + '>',          expect: 250 },
+    { send: 'DATA',                          expect: 354 },
+    { send: message,                         expect: 250 },  // mail kabul edildi
+  ];
+  let idx = 0, buf = '', finished = false;
+  const finish = (err) => { if (finished) return; finished = true; try { socket.end(); } catch(e){} done(err || null); };
+  const socket = tls.connect({ host: 'smtp.gmail.com', port: 465, servername: 'smtp.gmail.com' });
+  socket.setTimeout(15000);
+  socket.on('timeout', () => finish(new Error('SMTP zaman asimi')));
+  socket.on('error', (e) => finish(e));
+  socket.on('data', (chunk) => {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\r\n');
+    for (const line of lines){
+      const m = /^(\d{3}) /.exec(line);   // yanitin son satiri: "250 ..." (tire degil bosluk)
+      if (m){
+        const code = parseInt(m[1], 10);
+        buf = '';
+        if (code !== seq[idx].expect) return finish(new Error('SMTP ' + line));
+        idx++;
+        if (idx >= seq.length){ try { socket.write('QUIT\r\n'); } catch(e){} return finish(null); }
+        if (seq[idx].send != null) socket.write(seq[idx].send + '\r\n');
+        break;
+      }
+    }
+  });
+}
+
+// --- Bekleyen kayitlar (e-posta dogrulanana kadar) ---
+const pending = new Map();   // email -> { username, salt, hash, code, expires }
+function genCode(){ return String(crypto.randomInt(100000, 1000000)); }   // 6 haneli
 function getProfile(user){
   const p = profiles[key(user)] || {};
   return { user, avatar: p.avatar || null, bio: p.bio || '' };
@@ -135,12 +209,58 @@ const server = http.createServer((req, res) => {
       if (users[email]) return fail('Bu e-posta zaten kayitli');
       if (usernameTaken(username)) return fail('Bu kullanici adi alinmis');
       const salt = crypto.randomBytes(16).toString('hex');
-      users[email] = { username, salt, hash: hashPassword(password, salt), created: Date.now() };
+      const code = genCode();
+      pending.set(email, { username, salt, hash: hashPassword(password, salt), code, expires: Date.now() + 10*60*1000 });
+      sendMail({
+        to: email,
+        subject: 'Bizim Discord dogrulama kodun',
+        text: `Merhaba ${username},\n\nHesabini dogrulamak icin kodun: ${code}\n\nBu kod 10 dakika gecerlidir. Sen istemediysen bu mesaji yok say.`
+      }, (err, info) => {
+        if (err){ pending.delete(email); res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Mail gonderilemedi, biraz sonra tekrar dene' })); }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ pending: true, email, devCode: info && info.consoleOnly ? code : undefined }));
+      });
+    });
+  }
+
+  // ---------- E-posta kodunu dogrula -> hesabi olustur ----------
+  if (p === '/api/verify' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const email = String(data.email || '').trim().toLowerCase();
+      const code = String(data.code || '').trim();
+      const fail = (msg) => { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: msg })); };
+      const pend = pending.get(email);
+      if (!pend) return fail('Once kayit olmalisin');
+      if (Date.now() > pend.expires){ pending.delete(email); return fail('Kodun suresi doldu, tekrar kayit ol'); }
+      if (code !== pend.code) return fail('Kod hatali');
+      if (users[email]){ pending.delete(email); return fail('Bu e-posta zaten kayitli'); }
+      if (usernameTaken(pend.username)){ pending.delete(email); return fail('Bu kullanici adi alinmis'); }
+      users[email] = { username: pend.username, salt: pend.salt, hash: pend.hash, created: Date.now() };
       saveJSON(USERS_FILE, users);
-      getFriendData(username); // kayit olustur
-      const token = createSession(username);
+      pending.delete(email);
+      getFriendData(pend.username);
+      const token = createSession(pend.username);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ token, username }));
+      res.end(JSON.stringify({ token, username: pend.username }));
+    });
+  }
+
+  // ---------- Kodu tekrar gonder ----------
+  if (p === '/api/resend' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const email = String(data.email || '').trim().toLowerCase();
+      const pend = pending.get(email);
+      if (!pend){ res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Once kayit olmalisin' })); }
+      pend.code = genCode(); pend.expires = Date.now() + 10*60*1000;
+      sendMail({
+        to: email, subject: 'Bizim Discord dogrulama kodun',
+        text: `Yeni dogrulama kodun: ${pend.code}\n\nBu kod 10 dakika gecerlidir.`
+      }, (err, info) => {
+        if (err){ res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'Mail gonderilemedi' })); }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, devCode: info && info.consoleOnly ? pend.code : undefined }));
+      });
     });
   }
 
