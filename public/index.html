@@ -274,6 +274,9 @@
   .msg img.att{max-width:min(340px,80vw); max-height:280px; border-radius:8px; margin-top:6px; display:block}
   .msg a.file{display:inline-flex; gap:8px; align-items:center; margin-top:6px; background:var(--bg2);
     padding:10px 14px; border-radius:8px; color:#00a8fc; text-decoration:none; max-width:80vw}
+  .msg-link{color:#00a8fc; text-decoration:none; word-break:break-all} .msg-link:hover{text-decoration:underline}
+  .embed-video{margin-top:6px; width:min(420px,86vw); border-radius:10px; overflow:hidden; background:#000}
+  .embed-video iframe, .embed-video video{width:100%; aspect-ratio:16/9; display:block; border:0; background:#000}
   .inputbar{padding:0 14px 16px}
   .inputrow{background:#35373c; border:1px solid var(--border); border-radius:14px; display:flex; align-items:center; padding:0 8px}
   .inputrow:focus-within{border-color:var(--accent)}
@@ -1153,8 +1156,31 @@ function isKnownUser(name){
   return n===username.toLowerCase() || (serverInfo.members||[]).some(m=>m.toLowerCase()===n) || onlineUsers.some(o=>o.user.toLowerCase()===n) || !!profileCache[n];
 }
 function renderText(text){
-  return esc(text||'').replace(/@([A-Za-z0-9_]+)/g, (full,name)=>
+  let safe = esc(text||'');
+  // URL -> tiklanabilir link (escaped &amp; -> gercek & href icin)
+  safe = safe.replace(/(https?:\/\/[^\s<]+)/g, m=>{
+    const real=m.replace(/&amp;/g,'&').replace(/[.,)]+$/,'');
+    return `<a class="msg-link" href="${real}" target="_blank" rel="noopener">${m}</a>`;
+  });
+  // @bahsetme
+  safe = safe.replace(/@([A-Za-z0-9_]+)/g, (full,name)=>
     isKnownUser(name) ? `<span class="mention" onclick="openProfile('${name}')">@${name}</span>` : full);
+  return safe;
+}
+// Mesajdaki video/resim linklerini gomulu oynatici/resme cevir
+function embedHTML(text){
+  if(!text) return '';
+  const urls = (text.match(/https?:\/\/[^\s]+/g) || []).slice(0,3);
+  let out='', n=0;
+  for(const raw of urls){
+    if(n>=2) break;
+    const url = raw.replace(/[.,)]+$/,'');
+    const yt = url.match(/(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/);
+    if(yt){ out+=`<div class="embed-video"><iframe src="https://www.youtube.com/embed/${yt[1]}" allowfullscreen frameborder="0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen"></iframe></div>`; n++; continue; }
+    if(/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(url)){ out+=`<div class="embed-video"><video src="${esc(url)}" controls playsinline preload="metadata"></video></div>`; n++; continue; }
+    if(/\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(url)){ out+=`<img class="att" src="${esc(url)}" alt="" loading="lazy">`; n++; continue; }
+  }
+  return out;
 }
 function mentionsMe(text){
   if(!text || !username) return false;
@@ -1649,7 +1675,7 @@ function appendMessage(m){
     content = (m.file.mime||'').startsWith('image/')
       ? `<img class="att" src="${m.file.url}" alt="">`
       : `<a class="file" href="${m.file.url}" download="${esc(m.file.name)}" target="_blank">📎 ${esc(m.file.name)}</a>`;
-  } else content = `<div class="text" data-raw="${esc(m.text||'')}">${renderText(m.text)}${m.edited?'<span class="edited">(duzenlendi)</span>':''}</div>`;
+  } else content = `<div class="text" data-raw="${esc(m.text||'')}">${renderText(m.text)}${m.edited?'<span class="edited">(duzenlendi)</span>':''}</div>`+embedHTML(m.text);
   const mentioned = !currentDM && mentionsMe(m.text);
   const interactive = !currentDM && !!m.id;
   const reply = (!currentDM) ? replyPreviewHTML(m) : '';
