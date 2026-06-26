@@ -6,6 +6,9 @@ data/sessions.json
 data/mail-config.json
 data/friends.json
 data/profiles.json
+data/channels.json
+data/server.json
+data/dms.json
 
 # Yuklenen dosyalar
 uploads/

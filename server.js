@@ -20,21 +20,38 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// --- Kanallar ---
-const TEXT_CHANNELS  = ['genel', 'oyun', 'muzik', 'sohbet'];
-const VOICE_CHANNELS = ['Sesli Oda 1', 'Sesli Oda 2', 'Oyun Odasi'];
-
 // --- Kalici kayit (dosyaya yazilir, sunucu kapansa da kalir) ---
 const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 const FRIENDS_FILE  = path.join(DATA_DIR, 'friends.json');
 const USERS_FILE    = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+const CHANNELS_FILE = path.join(DATA_DIR, 'channels.json');
+const SERVER_FILE   = path.join(DATA_DIR, 'server.json');
+const DMS_FILE      = path.join(DATA_DIR, 'dms.json');
 function loadJSON(f, def){ try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch(e){ return def; } }
 function saveJSON(f, obj){ try { fs.writeFileSync(f, JSON.stringify(obj)); } catch(e){} }
 let profiles = loadJSON(PROFILES_FILE, {});   // username -> { avatar, bio }
 let friends  = loadJSON(FRIENDS_FILE, {});    // username -> { friends:[], requests:[] }
 let users    = loadJSON(USERS_FILE, {});      // email -> { username, salt, hash, created }
 let sessions = loadJSON(SESSIONS_FILE, {});   // token -> username
+let dms      = loadJSON(DMS_FILE, {});        // "a|b" -> [ {from, text, file, ts} ]
+
+// --- Kanallar (duzenlenebilir, dosyada saklanir) ---
+const _ch = loadJSON(CHANNELS_FILE, null);
+const TEXT_CHANNELS  = (_ch && Array.isArray(_ch.text))  ? _ch.text  : ['genel', 'oyun', 'muzik', 'sohbet'];
+const VOICE_CHANNELS = (_ch && Array.isArray(_ch.voice)) ? _ch.voice : ['Sesli Oda 1', 'Sesli Oda 2', 'Oyun Odasi'];
+function saveChannels(){ saveJSON(CHANNELS_FILE, { text: TEXT_CHANNELS, voice: VOICE_CHANNELS }); }
+
+// --- Sunucu ayarlari ---
+let serverInfo = loadJSON(SERVER_FILE, { name: 'SUICIDEHOTLINE', icon: null });
+function saveServer(){ saveJSON(SERVER_FILE, serverInfo); }
+
+function dmKey(a, b){ return [key(a), key(b)].sort().join('|'); }
+function allUsernames(){
+  const seen = new Set(), out = [];
+  for (const u of Object.values(users)){ if (u && u.username && !seen.has(key(u.username))){ seen.add(key(u.username)); out.push(u.username); } }
+  return out;
+}
 
 const key = u => (u||'').toLowerCase();
 
@@ -89,10 +106,21 @@ function broadcast(payload, exceptId){
   }
 }
 function broadcastPresence(){
-  const seen = new Set();
-  const users = [];
+  const online = [];
+  const onlineKeys = new Set();
   for (const [id, c] of clients){
-    users.push({ id, user: c.user, avatar: getProfile(c.user).avatar });
+    online.push({ id, user: c.user, avatar: getProfile(c.user).avatar });
+    onlineKeys.add(key(c.user));
+  }
+  // Tum kayitli uyeler + cevrimici/cevrimdisi durumu (sagda hep gorunur)
+  const seen = new Set();
+  const members = [];
+  for (const u of allUsernames()){
+    seen.add(key(u));
+    members.push({ user: u, avatar: getProfile(u).avatar, online: onlineKeys.has(key(u)) });
+  }
+  for (const [id, c] of clients){   // hesabi olmayan ama bagli (olmamali) -> yine de ekle
+    if (!seen.has(key(c.user))){ seen.add(key(c.user)); members.push({ user: c.user, avatar: getProfile(c.user).avatar, online: true }); }
   }
   const voice = {};
   for (const room of VOICE_CHANNELS){
@@ -100,7 +128,7 @@ function broadcastPresence(){
       .filter(id => clients.has(id))
       .map(id => ({ id, user: clients.get(id).user, avatar: getProfile(clients.get(id).user).avatar }));
   }
-  broadcast({ type: 'presence', users, voice });
+  broadcast({ type: 'presence', users: online, members, voice });
 }
 
 function readJSON(req, cb){
@@ -204,7 +232,7 @@ const server = http.createServer((req, res) => {
     getFriendData(user); // kayit olustur
 
     sendTo(clientId, { type: 'init', textChannels: TEXT_CHANNELS, voiceChannels: VOICE_CHANNELS,
-      history, me: getProfile(user), friends: getFriendData(user) });
+      history, me: getProfile(user), friends: getFriendData(user), server: serverInfo });
     broadcastPresence();
 
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch(e){} }, 25000);
@@ -236,6 +264,95 @@ const server = http.createServer((req, res) => {
     const channel = url.searchParams.get('channel');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(history[channel] || []));
+  }
+
+  // ---------- Kanal yonetimi (ekle / yeniden adlandir / sil) ----------
+  if (p === '/api/channel' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c){ res.writeHead(401); return res.end('giris yap'); }
+      const kind = data.kind === 'voice' ? 'voice' : 'text';
+      const list = kind === 'voice' ? VOICE_CHANNELS : TEXT_CHANNELS;
+      const fail = (m) => { res.writeHead(400, { 'Content-Type':'application/json' }); res.end(JSON.stringify({ error:m })); };
+      const norm = s => String(s||'').trim().slice(0,40);
+      if (data.action === 'add'){
+        const name = norm(data.name);
+        if (!name) return fail('Kanal adi gerekli');
+        if (list.some(x => key(x)===key(name))) return fail('Bu kanal zaten var');
+        list.push(name);
+        if (kind === 'text') history[name] = []; else voiceMembers[name] = new Set();
+      } else if (data.action === 'rename'){
+        const name = norm(data.name), newName = norm(data.newName);
+        const i = list.findIndex(x => key(x)===key(name));
+        if (i < 0) return fail('Kanal bulunamadi');
+        if (!newName) return fail('Yeni ad gerekli');
+        if (list.some(x => key(x)===key(newName) && key(x)!==key(name))) return fail('Bu ad zaten var');
+        list[i] = newName;
+        if (kind === 'text'){ history[newName] = history[name] || []; if (name!==newName) delete history[name]; }
+        else { voiceMembers[newName] = voiceMembers[name] || new Set(); if (name!==newName) delete voiceMembers[name]; }
+      } else if (data.action === 'delete'){
+        const name = norm(data.name);
+        const i = list.findIndex(x => key(x)===key(name));
+        if (i < 0) return fail('Kanal bulunamadi');
+        if (kind === 'text' && list.length <= 1) return fail('En az bir yazi kanali kalmali');
+        list.splice(i, 1);
+        if (kind === 'text') delete history[name]; else delete voiceMembers[name];
+      } else return fail('Gecersiz islem');
+      saveChannels();
+      broadcast({ type:'channels', textChannels: TEXT_CHANNELS, voiceChannels: VOICE_CHANNELS });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Sunucu ayarlari (isim) ----------
+  if (p === '/api/server' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c){ res.writeHead(401); return res.end('giris yap'); }
+      const name = String(data.name||'').trim().slice(0,40);
+      if (name) serverInfo.name = name;
+      saveServer();
+      broadcast({ type:'server', server: serverInfo });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Sunucu ikonu yukle ----------
+  if (p === '/api/server-icon' && req.method === 'POST'){
+    const c = clients.get(req.headers['x-client-id']);
+    if (!c){ res.writeHead(401); return res.end(); }
+    return saveBinary(req, res, (file) => {
+      serverInfo.icon = file.url; saveServer();
+      broadcast({ type:'server', server: serverInfo });
+      res.writeHead(200); res.end(JSON.stringify({ url: file.url }));
+    });
+  }
+
+  // ---------- DM (direkt mesaj): gecmis getir / gonder ----------
+  if (p === '/api/dm'){
+    if (req.method === 'GET'){
+      const me = userFromToken(url.searchParams.get('token'));
+      const other = url.searchParams.get('with') || '';
+      if (!me){ res.writeHead(401); return res.end('giris yap'); }
+      res.writeHead(200, { 'Content-Type':'application/json' });
+      return res.end(JSON.stringify(dms[dmKey(me, other)] || []));
+    }
+    if (req.method === 'POST'){
+      return readJSON(req, (data) => {
+        const c = clients.get(data.id);
+        const to = String(data.to||'').trim();
+        const text = String(data.text||'').slice(0,2000);
+        if (!c || !to || !text){ res.writeHead(400); return res.end(); }
+        const msg = { from: c.user, to, text, ts: Date.now(), avatar: getProfile(c.user).avatar };
+        const k = dmKey(c.user, to);
+        if (!dms[k]) dms[k] = [];
+        dms[k].push(msg); if (dms[k].length > 200) dms[k].shift();
+        saveJSON(DMS_FILE, dms);
+        sendToUser(to, { type:'dm', ...msg });
+        sendToUser(c.user, { type:'dm', ...msg });
+        res.writeHead(200); res.end('ok');
+      });
+    }
   }
 
   // ---------- Dosya yukle ----------

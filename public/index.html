@@ -127,11 +127,18 @@
   .nav-btn:hover{background:#404249}
   .badge{position:absolute; right:10px; background:var(--red); color:#fff; border-radius:10px;
     font-size:11px; padding:1px 7px; font-weight:700}
-  .ch-group{padding:14px 8px 4px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px}
+  .ch-group{padding:14px 8px 4px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+    display:flex; align-items:center; justify-content:space-between}
+  .ch-add{cursor:pointer; font-size:16px; line-height:1; color:var(--muted); padding:0 2px} .ch-add:hover{color:var(--text)}
   .channel{padding:9px 10px; margin:1px 8px; border-radius:8px; cursor:pointer; color:var(--muted);
-    display:flex; align-items:center; gap:6px; font-size:15px}
+    display:flex; align-items:center; gap:6px; font-size:15px; justify-content:space-between}
   .channel:hover{background:#35373c; color:var(--text)}
   .channel.active{background:#404249; color:var(--text)}
+  .channel .cname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1}
+  .ch-tools{display:none; gap:8px; flex-shrink:0; font-size:13px}
+  .channel:hover .ch-tools{display:flex}
+  .ch-tools span{cursor:pointer; opacity:.7} .ch-tools span:hover{opacity:1}
+  .member.off{opacity:.42} .member .mname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .voice-members{margin:0 8px 4px 22px}
   .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
   .me-bar{padding:8px 10px; background:var(--bg3); display:flex; align-items:center; gap:8px; cursor:pointer}
@@ -277,12 +284,15 @@
 
     <!-- SOL -->
     <div class="sidebar" id="sidebar">
-      <div class="server-name"><span class="rec-dot" id="recDot"></span>SUICIDEHOTLINE</div>
+      <div class="server-name" style="cursor:pointer" onclick="openSettings();settingsTab('server')" title="Sunucu ayarlari">
+        <span class="rec-dot" id="recDot"></span><span id="serverNameText">SUICIDEHOTLINE</span>
+        <span style="margin-left:auto; color:var(--muted); font-size:14px">⚙️</span>
+      </div>
       <div class="scroll">
         <div class="nav-btn" onclick="showFriends()">👥 Arkadaslar <span class="badge" id="reqBadge" style="display:none">0</span></div>
-        <div class="ch-group">Yazi Kanallari</div>
+        <div class="ch-group">Yazi Kanallari <span class="ch-add" onclick="addChannel('text')" title="Kanal ekle">＋</span></div>
         <div id="textChannels"></div>
-        <div class="ch-group">Sesli Kanallar</div>
+        <div class="ch-group">Sesli Kanallar <span class="ch-add" onclick="addChannel('voice')" title="Sesli kanal ekle">＋</span></div>
         <div id="voiceChannels"></div>
       </div>
       <div class="me-bar" onclick="openSettings()">
@@ -382,6 +392,9 @@
       <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
       <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
       <div class="snav-sep"></div>
+      <div class="settings-nav-title">Sunucu</div>
+      <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
+      <div class="snav-sep"></div>
       <div class="snav danger" onclick="logout()">Cikis Yap</div>
     </div>
   </div>
@@ -430,6 +443,27 @@
         </label>
       </div>
     </div>
+
+    <!-- Sunucu Ayarlari -->
+    <div class="settings-section" id="sec-server">
+      <h1>Sunucu Ayarlari</h1>
+      <div class="acct-card" style="padding:16px">
+        <div class="acct-head" style="margin-top:0; padding:0 0 14px">
+          <div class="pava" id="svIcon" onclick="serverIconInput.click()" title="Sunucu ikonunu degistir" style="cursor:pointer"></div>
+          <button class="btn sec" style="width:auto; margin-top:30px" onclick="serverIconInput.click()">📷 Ikon Yukle</button>
+          <input type="file" id="serverIconInput" accept="image/*" style="display:none" onchange="uploadServerIcon()">
+        </div>
+        <div class="label">Sunucu Adi</div>
+        <input id="svName" maxlength="40" placeholder="Sunucu adi"
+          style="width:100%; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); outline:none; margin-bottom:14px">
+        <button class="btn" style="width:auto" onclick="saveServerName()">Kaydet</button>
+      </div>
+      <p style="color:var(--muted); font-size:13px; margin-top:14px">
+        Kanal ekleme / silme / yeniden adlandirma: sol taraftaki kanal listesinde
+        kategori basligindaki <b>＋</b> ile ekle, kanalin uzerine gelince cikan
+        <b>✎</b> / <b>🗑</b> ile duzenle.
+      </p>
+    </div>
   </div>
 </div>
 
@@ -439,8 +473,11 @@ const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 let username = '';
 let token = localStorage.getItem('token') || '';
 let currentChannel = 'genel';
+let currentDM = null;                 // DM modunda: karsi kullanici adi
+let serverInfo = { name:'SUICIDEHOTLINE', icon:null };
 let textChannels = [], voiceChannels = [];
 let es = null, presenceVoice = {};
+let lastMembers = [];
 let myProfile = { avatar:null, bio:'' };
 let myFriends = { friends:[], requests:[] };
 const profileCache = {};            // username -> {avatar, bio}
@@ -494,10 +531,16 @@ function openSettings(){
 }
 function closeSettings(){ $('settings').classList.remove('open'); }
 function settingsTab(name){
-  ['account','profile','appearance'].forEach(n=>{
+  ['account','profile','appearance','server'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
     $('snav-'+n).classList.toggle('active', n===name);
   });
+  if(name==='server'){
+    $('svName').value = serverInfo.name || '';
+    const a=$('svIcon');
+    if(serverInfo.icon){ a.style.backgroundImage=`url('${serverInfo.icon}')`; a.textContent=''; }
+    else { a.style.backgroundImage=''; a.textContent=(serverInfo.name||'S').slice(0,2).toUpperCase(); }
+  }
 }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('settings').classList.contains('open')) closeSettings(); });
 
@@ -570,20 +613,42 @@ function handle(m){
       textChannels=m.textChannels; voiceChannels=m.voiceChannels;
       myProfile = m.me || myProfile; cacheProfile(username, myProfile);
       myFriends = m.friends || myFriends;
+      if(m.server) applyServer(m.server);
+      if(!textChannels.includes(currentChannel)) currentChannel = textChannels[0] || 'genel';
       refreshMe(); renderChannels(); renderMessages(m.history[currentChannel]||[]); updateReqBadge();
       break;
     case 'message':
       cacheProfile(m.user, {avatar:m.avatar});
-      if(m.channel===currentChannel) appendMessage(m);
+      if(!currentDM && m.channel===currentChannel) appendMessage(m);
       break;
     case 'presence':
       (m.users||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
-      renderMembers(m.users); presenceVoice=m.voice||{}; renderChannels();
+      (m.members||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
+      lastUsers = m.users || lastUsers;
+      renderMembers(m.members); presenceVoice=m.voice||{}; renderChannels();
+      if($('friendsView').style.display==='block') renderFriends();
       break;
     case 'profile-update':
       cacheProfile(m.user, m.profile);
       if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; refreshMe(); }
-      renderMembers(lastUsers); break;
+      renderMembers(lastMembers); break;
+    case 'channels':
+      textChannels=m.textChannels||textChannels; voiceChannels=m.voiceChannels||voiceChannels;
+      if(!currentDM && !inVoiceView() && !textChannels.includes(currentChannel)){
+        openChannel(textChannels[0] || 'genel');
+      }
+      renderChannels(); break;
+    case 'server': applyServer(m.server); break;
+    case 'dm': {
+      cacheProfile(m.from, {avatar:m.avatar});
+      const other = (m.from.toLowerCase()===username.toLowerCase()) ? m.to : m.from;
+      if(currentDM && other.toLowerCase()===currentDM.toLowerCase()){
+        appendMessage({ user:m.from, text:m.text, file:m.file, ts:m.ts, avatar:m.avatar });
+      } else if(m.from.toLowerCase()!==username.toLowerCase()){
+        toast('💬 '+m.from+': '+String(m.text||'').slice(0,40));
+      }
+      break;
+    }
     case 'friend-request':
       myFriends.requests = myFriends.requests || [];
       if(!myFriends.requests.some(r=>r.toLowerCase()===m.from.toLowerCase())) myFriends.requests.push(m.from);
@@ -606,20 +671,97 @@ function refreshMe(){
   if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; }
   else { a.style.backgroundImage=''; a.textContent=initials(username); }
 }
+function applyServer(s){
+  if(!s) return; serverInfo = s;
+  $('serverNameText').textContent = s.name || 'SUICIDEHOTLINE';
+  const rs = $('railServer');
+  if(s.icon){ rs.style.backgroundImage=`url('${s.icon}')`; rs.textContent=''; }
+  else { rs.style.backgroundImage=''; rs.textContent=(s.name||'S').slice(0,2).toUpperCase(); }
+  rs.title = s.name || '';
+  applyRecBlink();
+}
 
 // ======== Kanallar ========
 function renderChannels(){
-  $('textChannels').innerHTML = textChannels.map(c=>
-    `<div class="channel ${c===currentChannel&&!inVoiceView()?'active':''}" onclick="openChannel('${c}')"># ${esc(c)}</div>`).join('');
-  $('voiceChannels').innerHTML = voiceChannels.map(c=>{
+  $('textChannels').innerHTML = textChannels.map((c,i)=>
+    `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''}" onclick="openChannel('${esc(c)}')">
+       <span class="cname"># ${esc(c)}</span>
+       <span class="ch-tools">
+         <span onclick="event.stopPropagation();renameChannel('text',${i})" title="Yeniden adlandir">✎</span>
+         <span onclick="event.stopPropagation();deleteChannel('text',${i})" title="Sil">🗑</span>
+       </span></div>`).join('');
+  $('voiceChannels').innerHTML = voiceChannels.map((c,i)=>{
     const mems=(presenceVoice[c]||[]).map(u=>`<div class="voice-member">${avaHTML(u.user,20)}<span onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span></div>`).join('');
-    return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">🔊 ${esc(c)}</div><div class="voice-members">${mems}</div>`;
+    return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">
+       <span class="cname">🔊 ${esc(c)}</span>
+       <span class="ch-tools">
+         <span onclick="event.stopPropagation();renameChannel('voice',${i})" title="Yeniden adlandir">✎</span>
+         <span onclick="event.stopPropagation();deleteChannel('voice',${i})" title="Sil">🗑</span>
+       </span></div><div class="voice-members">${mems}</div>`;
   }).join('');
+}
+
+// ======== Kanal yonetimi ========
+function addChannel(kind){
+  const name = prompt(kind==='voice' ? 'Yeni sesli kanal adi:' : 'Yeni yazi kanali adi:');
+  if(!name || !name.trim()) return;
+  chanReq({ action:'add', kind, name:name.trim() });
+}
+function renameChannel(kind, i){
+  const cur = (kind==='voice'?voiceChannels:textChannels)[i]; if(cur==null) return;
+  const nn = prompt('Yeni ad:', cur);
+  if(nn==null || !nn.trim() || nn.trim()===cur) return;
+  chanReq({ action:'rename', kind, name:cur, newName:nn.trim() });
+}
+function deleteChannel(kind, i){
+  const cur = (kind==='voice'?voiceChannels:textChannels)[i]; if(cur==null) return;
+  if(!confirm(`"${cur}" kanalini silmek istiyor musun?`+(kind==='voice'?'':' Mesajlari da silinir.'))) return;
+  chanReq({ action:'delete', kind, name:cur });
+}
+function chanReq(body){
+  fetch('/api/channel',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId, ...body})}).then(async r=>{
+      if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Islem basarisiz'); }
+    }).catch(()=>toast('Baglanti hatasi'));
+}
+
+// ======== Sunucu yonetimi ========
+function saveServerName(){
+  const name = $('svName').value.trim(); if(!name) return;
+  fetch('/api/server',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId, name})}).then(()=>toast('Sunucu adi guncellendi'));
+}
+function uploadServerIcon(){
+  const f=$('serverIconInput').files[0]; if(!f) return;
+  fetch('/api/server-icon',{method:'POST',headers:{'Content-Type':f.type,'X-Client-Id':clientId,'X-Filename':encodeURIComponent(f.name)},body:f})
+    .then(r=>r.json()).then(d=>{
+      const a=$('svIcon'); a.style.backgroundImage=`url('${d.url}')`; a.textContent='';
+      $('serverIconInput').value='';
+    }).catch(()=>toast('Yuklenemedi'));
+}
+
+// ======== DM (direkt mesaj) ========
+function openDM(user){
+  if(!user) return;
+  currentDM = user;
+  closeModal('profileModal');
+  $('friendsView').style.display='none'; $('videoArea').style.display='none'; $('controls').style.display='none';
+  $('messages').style.display='block'; $('inputbar').style.display='block';
+  $('topIcon').textContent='@'; $('topName').textContent=user;
+  $('msgInput').placeholder=`@${user} kullanicisina mesaj...`;
+  renderChannels();
+  fetch('/api/dm?token='+encodeURIComponent(token)+'&with='+encodeURIComponent(user))
+    .then(r=>r.json()).then(list=>{
+      $('messages').innerHTML = `<div class="ch-welcome"><div class="ico">@</div><h2>${esc(user)}</h2>`+
+        `<p>Bu, <b>${esc(user)}</b> ile ozel sohbetinin baslangici.</p></div>`;
+      (list||[]).forEach(dm=>{ cacheProfile(dm.from,{avatar:dm.avatar}); appendMessage({user:dm.from, text:dm.text, file:dm.file, ts:dm.ts}); });
+    }).catch(()=>{});
+  closeDrawers();
 }
 function inVoiceView(){ return $('videoArea').style.display==='block'; }
 
 function openChannel(c){
-  currentChannel=c;
+  currentDM=null; currentChannel=c;
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
@@ -656,8 +798,13 @@ function appendMessage(m){
 }
 function sendMsg(){
   const t=$('msgInput').value.trim(); if(!t) return; $('msgInput').value='';
-  fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({id:clientId,channel:currentChannel,text:t})});
+  if(currentDM){
+    fetch('/api/dm',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:clientId, to:currentDM, text:t})});
+  } else {
+    fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:clientId,channel:currentChannel,text:t})});
+  }
 }
 function uploadFile(){
   const f=$('fileInput').files[0]; if(!f) return;
@@ -666,13 +813,18 @@ function uploadFile(){
     body:f}).then(()=>{$('fileInput').value='';});
 }
 
-// ======== Cevrimici uyeler ========
+// ======== Uyeler (cevrimici + cevrimdisi) ========
 let lastUsers=[];
-function renderMembers(users){
-  lastUsers = users||lastUsers;
-  $('onlineCount').textContent=lastUsers.length;
-  $('memberList').innerHTML=lastUsers.map(u=>
-    `<div class="member" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}${esc(u.user)}<span class="dot"></span></div>`).join('');
+function renderMembers(members){
+  lastMembers = members || lastMembers;
+  const on = lastMembers.filter(x=>x.online), off = lastMembers.filter(x=>!x.online);
+  $('onlineCount').textContent = on.length;
+  const row = (u,online)=>
+    `<div class="member ${online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
+    `<span class="mname">${esc(u.user)}</span>${online?'<span class="dot"></span>':''}</div>`;
+  let html = on.map(u=>row(u,true)).join('');
+  if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(u=>row(u,false)).join('');
+  $('memberList').innerHTML = html;
 }
 
 // ======== Profil goruntuleme ========
@@ -689,13 +841,16 @@ function openProfile(user){
     const act=$('pmActions'); act.innerHTML='';
     if(p.user.toLowerCase()===username.toLowerCase()){
       act.innerHTML=`<button class="btn" onclick="closeModal('profileModal');openEditProfile()">Profilini Duzenle</button>`;
-    } else if(myFriends.friends.some(f=>f.toLowerCase()===p.user.toLowerCase())){
-      act.innerHTML=`<button class="btn sec" disabled>✓ Arkadassiniz</button>
-        <button class="btn danger" onclick="friendAct('remove','${esc(p.user)}')">Cikar</button>`;
-    } else if(sentRequests.has(p.user.toLowerCase())){
-      act.innerHTML=`<button class="btn sec" disabled>İstek gonderildi</button>`;
     } else {
-      act.innerHTML=`<button class="btn" onclick="friendAct('add','${esc(p.user)}')">＋ Arkadas Ekle</button>`;
+      let btns = `<button class="btn sec" onclick="openDM('${esc(p.user)}')">💬 Mesaj</button>`;
+      if(myFriends.friends.some(f=>f.toLowerCase()===p.user.toLowerCase())){
+        btns += `<button class="btn danger" onclick="friendAct('remove','${esc(p.user)}')">Cikar</button>`;
+      } else if(sentRequests.has(p.user.toLowerCase())){
+        btns += `<button class="btn sec" disabled>İstek gonderildi</button>`;
+      } else {
+        btns += `<button class="btn" onclick="friendAct('add','${esc(p.user)}')">＋ Ekle</button>`;
+      }
+      act.innerHTML = btns;
     }
     openModal('profileModal');
   });
@@ -726,6 +881,7 @@ function saveProfile(){
 
 // ======== Arkadaslar ========
 function showFriends(){
+  currentDM=null;
   $('messages').style.display='none'; $('inputbar').style.display='none';
   $('videoArea').style.display='none'; $('controls').style.display='none';
   $('friendsView').style.display='block';
@@ -758,6 +914,7 @@ function renderFriends(){
   html+= frs.length ? frs.map(u=>{
     const online=lastUsers.some(x=>x.user.toLowerCase()===u.toLowerCase());
     return `<div class="frow">${avaHTML(u,38)}<div class="who"><div class="n">${esc(u)}</div><div class="s">${online?'🟢 Cevrimici':'⚫ Cevrimdisi'}</div></div>
+      <button class="mini add" onclick="openDM('${esc(u)}')">💬 Mesaj</button>
       <button class="mini no" onclick="openProfile('${esc(u)}')">Profil</button></div>`;
   }).join('') : `<div style="color:var(--muted);padding:10px">Henuz arkadasin yok. Yukaridan kullanici adi yazip ekle!</div>`;
   $('friendsContent').innerHTML=html;
@@ -794,7 +951,7 @@ async function joinVoice(room){
   if(currentVoiceRoom) await leaveVoice();
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
-  currentVoiceRoom=room;
+  currentDM=null; currentVoiceRoom=room;
   $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
   $('videoArea').style.display='block'; $('controls').style.display='flex';
   $('topIcon').textContent='🔊'; $('topName').textContent=room;
