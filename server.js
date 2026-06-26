@@ -90,6 +90,9 @@ TEXT_CHANNELS.forEach(c => history[c] = []);
 const voiceMembers = {};                // sesli oda -> Set(clientId)
 VOICE_CHANNELS.forEach(c => voiceMembers[c] = new Set());
 
+function newMsgId(){ return crypto.randomBytes(6).toString('hex'); }
+function findMsg(channel, msgId){ const h = history[channel]; return h ? (h.find(m => m.id === msgId) || null) : null; }
+
 function sendTo(clientId, payload){
   const c = clients.get(clientId);
   if (c && c.res) { try { c.res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch(e){} }
@@ -252,10 +255,70 @@ const server = http.createServer((req, res) => {
       const { id, channel, text } = data;
       const c = clients.get(id);
       if (!c || !text || !TEXT_CHANNELS.includes(channel)){ res.writeHead(400); return res.end(); }
-      const msg = { type:'message', channel, user:c.user, avatar:getProfile(c.user).avatar,
-        text:String(text).slice(0,2000), ts:Date.now() };
+      let replyTo = null;
+      if (data.replyTo){
+        const orig = findMsg(channel, data.replyTo);
+        if (orig) replyTo = { id: orig.id, user: orig.user, text: (orig.text || (orig.file ? '📎 '+orig.file.name : '')).slice(0,120) };
+      }
+      const msg = { type:'message', id:newMsgId(), channel, user:c.user, avatar:getProfile(c.user).avatar,
+        text:String(text).slice(0,2000), ts:Date.now(), reactions:{}, replyTo };
       history[channel].push(msg); if (history[channel].length > 100) history[channel].shift();
       broadcast(msg); res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Mesaj duzenle ----------
+  if (p === '/api/message-edit' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c){ res.writeHead(401); return res.end(); }
+      const msg = findMsg(data.channel, data.msgId);
+      if (!msg || key(msg.user) !== key(c.user) || msg.file){ res.writeHead(400); return res.end(); }
+      msg.text = String(data.text||'').slice(0,2000); msg.edited = true;
+      broadcast({ type:'message-edit', channel:data.channel, msgId:msg.id, text:msg.text });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Mesaj sil ----------
+  if (p === '/api/message-delete' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c){ res.writeHead(401); return res.end(); }
+      const h = history[data.channel]; if (!h){ res.writeHead(400); return res.end(); }
+      const i = h.findIndex(m => m.id === data.msgId);
+      if (i < 0 || key(h[i].user) !== key(c.user)){ res.writeHead(400); return res.end(); }
+      h.splice(i, 1);
+      broadcast({ type:'message-delete', channel:data.channel, msgId:data.msgId });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Emoji tepki (ekle/kaldir) ----------
+  if (p === '/api/react' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      const emoji = String(data.emoji||'').slice(0,8);
+      if (!c || !emoji){ res.writeHead(400); return res.end(); }
+      const msg = findMsg(data.channel, data.msgId);
+      if (!msg){ res.writeHead(400); return res.end(); }
+      if (!msg.reactions) msg.reactions = {};
+      const arr = msg.reactions[emoji] || [];
+      const idx = arr.findIndex(u => key(u) === key(c.user));
+      if (idx >= 0) arr.splice(idx,1); else arr.push(c.user);
+      if (arr.length) msg.reactions[emoji] = arr; else delete msg.reactions[emoji];
+      broadcast({ type:'reaction', channel:data.channel, msgId:msg.id, reactions:msg.reactions });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Yaziyor... gostergesi ----------
+  if (p === '/api/typing' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id);
+      if (!c || !TEXT_CHANNELS.includes(data.channel)){ res.writeHead(400); return res.end(); }
+      broadcast({ type:'typing', channel:data.channel, user:c.user }, data.id);
+      res.writeHead(200); res.end('ok');
     });
   }
 
@@ -361,7 +424,7 @@ const server = http.createServer((req, res) => {
     const channel = decodeURIComponent(req.headers['x-channel'] || 'genel');
     if (!c || !TEXT_CHANNELS.includes(channel)){ res.writeHead(400); return res.end(); }
     return saveBinary(req, res, (file) => {
-      const msg = { type:'message', channel, user:c.user, avatar:getProfile(c.user).avatar, ts:Date.now(), file };
+      const msg = { type:'message', id:newMsgId(), channel, user:c.user, avatar:getProfile(c.user).avatar, ts:Date.now(), file, reactions:{} };
       history[channel].push(msg); if (history[channel].length > 100) history[channel].shift();
       broadcast(msg); res.writeHead(200); res.end('ok');
     });

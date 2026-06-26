@@ -194,6 +194,34 @@
   .inputrow input{flex:1; background:none; border:none; color:var(--text); padding:14px 8px; outline:none}
   .iconbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;padding:6px}
   .iconbtn:hover{color:var(--text)}
+  /* Mesaj ozellikleri: tepki, yanit, duzenle, sil */
+  .msg{position:relative}
+  .msg-actions{position:absolute; top:-12px; right:14px; background:var(--bg2); border:1px solid var(--border);
+    border-radius:8px; display:none; gap:1px; padding:2px; box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .msg:hover .msg-actions{display:flex}
+  .msg-actions .ma{cursor:pointer; padding:4px 7px; border-radius:5px; font-size:15px}
+  .msg-actions .ma:hover{background:#3a3d44}
+  .reactions{display:flex; flex-wrap:wrap; gap:5px; margin-top:4px}
+  .react{background:#2b2d31; border:1px solid var(--border); border-radius:8px; padding:1px 8px; font-size:13px; cursor:pointer; user-select:none}
+  .react:hover{border-color:var(--muted)}
+  .react.mine{background:rgba(88,101,242,.22); border-color:var(--accent)}
+  .reply-line{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); margin-bottom:2px; overflow:hidden; max-width:100%}
+  .reply-line b{color:var(--text); flex-shrink:0} .reply-line span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .reply-line .reply-ico{opacity:.6}
+  .edited{font-size:10px; color:var(--muted); margin-left:6px}
+  .edit-input{width:100%; background:var(--bg3); border:1px solid var(--accent); border-radius:6px; color:var(--text);
+    padding:7px 9px; outline:none; font-family:var(--serif); font-size:15.5px}
+  .reply-bar{display:none; align-items:center; gap:8px; background:#2b2d31; padding:7px 12px; border-radius:8px 8px 0 0;
+    font-size:13px; color:var(--muted); margin:0 14px -2px}
+  .reply-bar.show{display:flex}
+  .reply-bar b{color:var(--text)} .reply-bar .x{margin-left:auto; cursor:pointer; font-size:15px}
+  .typing-ind{height:0; overflow:hidden; padding:0 16px; font-size:13px; color:var(--muted); font-style:italic; transition:height .1s}
+  .typing-ind.show{height:20px}
+  .emoji-pop{position:fixed; background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:6px;
+    display:none; gap:3px; z-index:75; box-shadow:0 6px 20px rgba(0,0,0,.5)}
+  .emoji-pop.show{display:flex}
+  .emoji-pop span{cursor:pointer; font-size:20px; padding:4px 5px; border-radius:6px}
+  .emoji-pop span:hover{background:#3a3d44}
 
   /* Video */
   .video-area{flex:1; padding:12px; background:#000; display:none; overflow:auto}
@@ -362,9 +390,14 @@
       <!-- Mesajlar -->
       <div class="messages" id="messages"></div>
       <div class="inputbar" id="inputbar">
+        <div class="typing-ind" id="typingInd"></div>
+        <div class="reply-bar" id="replyBar">
+          <span id="replyBarText"></span><span class="x" onclick="cancelReply()">✕</span>
+        </div>
         <div class="inputrow">
           <button class="iconbtn" onclick="fileInput.click()" title="Dosya gonder">＋</button>
           <input id="msgInput" placeholder="#genel kanalina mesaj yaz..." onkeydown="if(event.key==='Enter')sendMsg()">
+          <button class="iconbtn" onclick="openEmojiInput(event)" title="Emoji">😀</button>
           <input type="file" id="fileInput" style="display:none" onchange="uploadFile()">
         </div>
       </div>
@@ -516,6 +549,9 @@
   </div>
 </div>
 
+<!-- Emoji secici (tepki + mesaj kutusu) -->
+<div class="emoji-pop" id="emojiPop"></div>
+
 <script>
 // ======== Durum ========
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -658,6 +694,15 @@ async function tryAutoLogin(){
 // Enter tusu ile gonder
 ['loginEmail','loginPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); }));
 ['regName','regEmail','regPass'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') doRegister(); }));
+// Yazarken "yaziyor..." sinyali (en fazla 2 sn'de bir)
+$('msgInput').addEventListener('input', ()=>{
+  if(currentDM || !currentChannel) return;
+  const now=Date.now();
+  if(now-lastTypingSent>2000){ lastTypingSent=now;
+    fetch('/api/typing',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:clientId,channel:currentChannel})}).catch(()=>{});
+  }
+});
 tryAutoLogin();
 
 // ======== SSE ========
@@ -677,7 +722,28 @@ function handle(m){
       break;
     case 'message':
       cacheProfile(m.user, {avatar:m.avatar});
+      if(typingState[m.user]){ delete typingState[m.user]; renderTyping(); }
       if(!currentDM && m.channel===currentChannel) appendMessage(m);
+      break;
+    case 'message-edit': {
+      if(currentDM || m.channel!==currentChannel) break;
+      const t=msgEl(m.msgId)&&msgEl(m.msgId).querySelector('.text');
+      if(t){ t.dataset.raw=m.text; t.innerHTML=esc(m.text)+'<span class="edited">(duzenlendi)</span>'; }
+      break;
+    }
+    case 'message-delete': {
+      if(currentDM || m.channel!==currentChannel) break;
+      const el=msgEl(m.msgId); if(el) el.remove();
+      break;
+    }
+    case 'reaction': {
+      if(currentDM || m.channel!==currentChannel) break;
+      const el=msgEl(m.msgId); const r=el&&el.querySelector('.reactions');
+      if(r) r.innerHTML=reactionsHTML({id:m.msgId, reactions:m.reactions});
+      break;
+    }
+    case 'typing':
+      if(!currentDM && m.channel===currentChannel) noticeTyping(m.user);
       break;
     case 'presence':
       (m.users||[]).forEach(u=>cacheProfile(u.user,{avatar:u.avatar}));
@@ -802,7 +868,7 @@ function uploadServerIcon(){
 // ======== DM (direkt mesaj) ========
 function openDM(user){
   if(!user) return;
-  currentDM = user;
+  currentDM = user; cancelReply(); typingState={}; renderTyping();
   closeModal('profileModal');
   $('friendsView').style.display='none'; $('videoArea').style.display='none'; $('controls').style.display='none';
   $('messages').style.display='block'; $('inputbar').style.display='block';
@@ -821,7 +887,7 @@ function openDM(user){
 function inVoiceView(){ return $('videoArea').style.display==='block'; }
 
 function openChannel(c){
-  currentDM=null; currentChannel=c;
+  currentDM=null; currentChannel=c; cancelReply(); typingState={}; renderTyping();
   $('topIcon').textContent='#'; $('topName').textContent=c;
   $('msgInput').placeholder=`#${c} kanalina mesaj yaz...`;
   $('friendsView').style.display='none';
@@ -843,6 +909,28 @@ function renderMessages(list){
     `<p>Burasi <b>#${esc(currentChannel)}</b> kanalinin baslangici. Ilk mesaji sen yaz! 🎉</p></div>`;
   list.forEach(appendMessage);
 }
+const REACT_EMOJIS = ['👍','❤️','😂','😮','😢','🔥','🎉','👀','😍','😎','🤔','👏'];
+function reactionsHTML(m){
+  if(!m.reactions) return '';
+  return Object.entries(m.reactions).map(([emo,users])=>{
+    const mine = users.some(u=>u.toLowerCase()===username.toLowerCase());
+    return `<span class="react ${mine?'mine':''}" onclick="reactMsg('${m.id}','${emo}')">${emo} ${users.length}</span>`;
+  }).join('');
+}
+function replyPreviewHTML(m){
+  if(!m.replyTo) return '';
+  return `<div class="reply-line"><span class="reply-ico">↩</span><b>${esc(m.replyTo.user)}</b> <span>${esc(m.replyTo.text||'')}</span></div>`;
+}
+function actionsHTML(m){
+  const mine = m.user && m.user.toLowerCase()===username.toLowerCase();
+  let h = `<span class="ma" onclick="openReactPicker(event,'${m.id}')" title="Tepki ekle">😀</span>`;
+  h += `<span class="ma" onclick="startReply('${m.id}')" title="Yanitla">↩</span>`;
+  if(mine && !m.file) h += `<span class="ma" onclick="startEdit('${m.id}')" title="Duzenle">✎</span>`;
+  if(mine) h += `<span class="ma" onclick="deleteMsg('${m.id}')" title="Sil">🗑</span>`;
+  return h;
+}
+function msgEl(id){ return document.querySelector(`#messages [data-id="${id}"]`); }
+
 function appendMessage(m){
   const time=new Date(m.ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
   let content='';
@@ -850,32 +938,117 @@ function appendMessage(m){
     content = (m.file.mime||'').startsWith('image/')
       ? `<img class="att" src="${m.file.url}" alt="">`
       : `<a class="file" href="${m.file.url}" download="${esc(m.file.name)}" target="_blank">📎 ${esc(m.file.name)}</a>`;
-  } else content = `<div class="text">${esc(m.text)}</div>`;
-  // Ayni kisi 5 dk icinde ard arda yazdiysa: avatar/isim tekrar gosterilmez
-  const grouped = lastMsgUser && m.user && m.user.toLowerCase()===lastMsgUser.toLowerCase() && (m.ts - lastMsgTs) < 5*60*1000;
+  } else content = `<div class="text" data-raw="${esc(m.text||'')}">${esc(m.text)}${m.edited?'<span class="edited">(duzenlendi)</span>':''}</div>`;
+  const interactive = !currentDM && !!m.id;
+  const reply = (!currentDM) ? replyPreviewHTML(m) : '';
+  const reactions = interactive ? `<div class="reactions">${reactionsHTML(m)}</div>` : '';
+  const actions = interactive ? `<div class="msg-actions">${actionsHTML(m)}</div>` : '';
+  // Ayni kisi 5 dk icinde ard arda yazdiysa: avatar/isim tekrar gosterilmez (yanit varsa grupla bozulur)
+  const grouped = !m.replyTo && lastMsgUser && m.user && m.user.toLowerCase()===lastMsgUser.toLowerCase() && (m.ts - lastMsgTs) < 5*60*1000;
   const el=document.createElement('div');
+  if(m.id) el.dataset.id=m.id; if(m.user) el.dataset.user=m.user;
   if(grouped){
     el.className='msg grouped';
-    el.innerHTML = `<span class="gtime">${time}</span>${content}`;
+    el.innerHTML = `<span class="gtime">${time}</span><div class="gwrap">${content}${reactions}</div>${actions}`;
   } else {
     el.className='msg';
-    el.innerHTML = `${avaHTML(m.user,40)}<div class="body"><div class="head">
+    el.innerHTML = `${avaHTML(m.user,40)}<div class="body">${reply}<div class="head">
       <span class="name" onclick="openProfile('${esc(m.user)}')">${esc(m.user)}</span>
-      <span class="time">${time}</span></div>${content}</div>`;
+      <span class="time">${time}</span></div>${content}${reactions}</div>${actions}`;
   }
   $('messages').appendChild(el);
   lastMsgUser=m.user; lastMsgTs=m.ts;
   $('messages').scrollTop=$('messages').scrollHeight;
 }
+
+// --- Tepki / yanit / duzenle / sil ---
+function reactMsg(id, emoji){
+  fetch('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId, channel:currentChannel, msgId:id, emoji})});
+  closeEmojiPop();
+}
+function openReactPicker(ev, id){
+  ev.stopPropagation();
+  showEmojiPop(ev.clientX, ev.clientY, emo=>reactMsg(id, emo));
+}
+function deleteMsg(id){
+  if(!confirm('Bu mesaji silmek istiyor musun?')) return;
+  fetch('/api/message-delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId, channel:currentChannel, msgId:id})});
+}
+function startEdit(id){
+  const el=msgEl(id); if(!el) return;
+  const t=el.querySelector('.text'); if(!t) return;
+  const raw=t.dataset.raw||t.textContent;
+  t.innerHTML=`<input class="edit-input" value="${esc(raw)}">`;
+  const inp=t.querySelector('.edit-input'); inp.focus(); inp.value=raw; inp.setSelectionRange(raw.length,raw.length);
+  inp.onkeydown=(e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); const v=inp.value.trim();
+      if(v){ fetch('/api/message-edit',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:clientId,channel:currentChannel,msgId:id,text:v})}); }
+      else cancelEdit(id, raw);
+    } else if(e.key==='Escape'){ cancelEdit(id, raw); }
+  };
+}
+function cancelEdit(id, raw){ const t=msgEl(id)&&msgEl(id).querySelector('.text'); if(t) t.innerHTML=esc(raw); }
+
+// --- Yanitlama ---
+let replyingTo=null;
+function startReply(id){
+  const el=msgEl(id); if(!el) return;
+  replyingTo={ id, user: el.dataset.user||'' };
+  $('replyBar').classList.add('show');
+  $('replyBarText').innerHTML = `<b>${esc(replyingTo.user)}</b> kullanicisina yanit veriyorsun`;
+  $('msgInput').focus();
+}
+function cancelReply(){ replyingTo=null; $('replyBar').classList.remove('show'); }
+
 function sendMsg(){
   const t=$('msgInput').value.trim(); if(!t) return; $('msgInput').value='';
   if(currentDM){
     fetch('/api/dm',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:clientId, to:currentDM, text:t})});
   } else {
-    fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({id:clientId,channel:currentChannel,text:t})});
+    const body={id:clientId,channel:currentChannel,text:t};
+    if(replyingTo) body.replyTo=replyingTo.id;
+    fetch('/api/message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    cancelReply();
   }
+}
+
+// --- Emoji secici (tepki + mesaj kutusu) ---
+let emojiPick=null;
+function showEmojiPop(x, y, cb){
+  const pop=$('emojiPop');
+  pop.innerHTML = REACT_EMOJIS.map(e=>`<span>${e}</span>`).join('');
+  [...pop.children].forEach((sp,i)=>sp.onclick=()=>{ closeEmojiPop(); cb(REACT_EMOJIS[i]); });
+  pop.classList.add('show');
+  const w=pop.offsetWidth||300, h=pop.offsetHeight||44;
+  pop.style.left=Math.max(8, Math.min(x, window.innerWidth-w-8))+'px';
+  pop.style.top=Math.max(8, y-h-6)+'px';
+}
+function closeEmojiPop(){ $('emojiPop').classList.remove('show'); }
+function openEmojiInput(ev){
+  ev.stopPropagation();
+  showEmojiPop(ev.clientX, ev.clientY, emo=>{ $('msgInput').value+=emo; $('msgInput').focus(); });
+}
+document.addEventListener('click', e=>{ if(!e.target.closest('.emoji-pop') && !e.target.closest('[onclick*="EmojiInput"]') && !e.target.closest('[onclick*="ReactPicker"]')) closeEmojiPop(); });
+
+// --- Yaziyor... gostergesi ---
+let typingState={}, lastTypingSent=0, typingTick=null;
+function noticeTyping(user){
+  if(user.toLowerCase()===username.toLowerCase()) return;
+  typingState[user]=Date.now()+5000; renderTyping();
+  clearTimeout(typingTick); typingTick=setTimeout(renderTyping,5100);
+}
+function renderTyping(){
+  const now=Date.now();
+  Object.keys(typingState).forEach(u=>{ if(typingState[u]<=now) delete typingState[u]; });
+  const us=Object.keys(typingState);
+  const ind=$('typingInd');
+  if(!us.length || currentDM){ ind.classList.remove('show'); ind.textContent=''; return; }
+  ind.textContent = (us.length===1 ? us[0]+' yaziyor...' : us.slice(0,3).join(', ')+' yaziyor...');
+  ind.classList.add('show');
 }
 function uploadFile(){
   const f=$('fileInput').files[0]; if(!f) return;
