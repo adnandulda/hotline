@@ -182,6 +182,16 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ username: user }));
   }
 
+  // ---------- Hesap bilgisi (kullanici adi + e-posta) ----------
+  if (p === '/api/me'){
+    const user = userFromToken(url.searchParams.get('token'));
+    if (!user){ res.writeHead(401); return res.end('gecersiz'); }
+    let email = '';
+    for (const [e, u] of Object.entries(users)){ if (key(u.username) === key(user)){ email = e; break; } }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ username: user, email, profile: getProfile(user) }));
+  }
+
   // ---------- SSE ----------
   if (p === '/events'){
     const clientId = url.searchParams.get('id');

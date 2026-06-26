@@ -3,13 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#262624">
+<meta name="theme-color" content="#1e1f22">
 <title>Bizim Discord</title>
 <style>
   :root{
-    --bg:#262624; --bg2:#1f1e1d; --bg3:#161514; --accent:#c96442; --accent2:#d97757;
-    --text:#f5f4ef; --muted:#a8a39a; --green:#5a9d6b; --red:#cc5a4a; --border:#36352f;
-    --serif:Georgia,'Times New Roman',serif;
+    /* Discord paleti */
+    --bg:#313338; --bg2:#2b2d31; --bg3:#1e1f22; --rail:#1e1f22;
+    --accent:#5865f2; --accent2:#4752c4;
+    --text:#f2f3f5; --muted:#949ba4; --green:#23a55a; --red:#da373c; --border:#26282c;
+    --serif:'gg sans','Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box; margin:0; padding:0;
     font-family:'Söhne','Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
@@ -20,7 +22,7 @@
     font-weight:700; color:#fff; background-size:cover; background-position:center; flex-shrink:0; cursor:pointer}
 
   /* ---- Giris ---- */
-  #login{position:fixed; inset:0; background:radial-gradient(circle at 30% 20%,#2f2d29,#1a1917);
+  #login{position:fixed; inset:0; background:radial-gradient(circle at 30% 20%,#3a3d6b,#1a1b2e);
     display:flex; align-items:center; justify-content:center; z-index:50; padding:16px}
   #login .box{background:var(--bg2); padding:36px; border-radius:18px; width:100%; max-width:380px; text-align:center;
     box-shadow:0 8px 40px rgba(0,0,0,.5); border:1px solid var(--border)}
@@ -37,12 +39,65 @@
   .btn{background:var(--accent); color:#fff; border:none; padding:13px 18px; border-radius:12px;
     font-size:15px; cursor:pointer; width:100%; transition:.15s; font-weight:500}
   .btn:hover{background:var(--accent2)}
-  .btn.sec{background:#3a3833} .btn.sec:hover{background:#4a473f}
+  .btn.sec{background:#404249} .btn.sec:hover{background:#4e5058}
   .btn.danger{background:var(--red)}
 
   /* ---- Yerlesim ---- */
   #app{display:none; height:100%}
   .layout{display:flex; height:100%; position:relative}
+
+  /* Sunucu ikon cubugu (rail) */
+  .rail{width:72px; background:var(--rail); display:flex; flex-direction:column; align-items:center;
+    padding:12px 0; gap:8px; flex-shrink:0; overflow-y:auto; z-index:31}
+  .rail::-webkit-scrollbar{width:0}
+  .rail-item{width:48px; height:48px; border-radius:24px; background:var(--bg2); display:flex; align-items:center;
+    justify-content:center; cursor:pointer; transition:border-radius .15s, background .15s; font-weight:700;
+    color:var(--text); position:relative; font-size:18px; background-size:cover; background-position:center; flex-shrink:0}
+  .rail-item:hover{border-radius:16px}
+  .rail-item.server:hover, .rail-item.home:hover{background:var(--accent); color:#fff}
+  .rail-item.active{border-radius:16px}
+  .rail-item.active::before{content:''; position:absolute; left:-12px; width:4px; height:40px; background:#fff; border-radius:0 4px 4px 0}
+  .rail-item.home{background:var(--accent); color:#fff}
+  .rail-item.add{color:var(--green); font-size:26px; font-weight:400}
+  .rail-item.add:hover{background:var(--green); color:#fff}
+  .rail-sep{width:32px; height:2px; background:var(--border); border-radius:1px; flex-shrink:0}
+
+  /* Kanala hos geldin basligi */
+  .ch-welcome{padding:18px 16px 6px}
+  .ch-welcome .ico{width:68px; height:68px; border-radius:50%; background:var(--bg2); display:flex; align-items:center;
+    justify-content:center; font-size:34px; color:var(--text); margin-bottom:10px}
+  .ch-welcome h2{font-size:30px; font-weight:800; margin-bottom:8px; font-family:var(--serif)}
+  .ch-welcome p{color:var(--muted); font-size:15px; line-height:1.4}
+
+  /* Kullanici Ayarlari (tam ekran) */
+  .settings-overlay{position:fixed; inset:0; background:var(--bg); display:none; z-index:70}
+  .settings-overlay.open{display:flex}
+  .settings-nav{width:218px; background:var(--bg2); padding:60px 6px 20px; overflow-y:auto; display:flex; flex-direction:column;
+    align-items:flex-end}
+  .settings-nav .inner{width:192px}
+  .settings-nav-title{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; padding:6px 10px; letter-spacing:.4px}
+  .snav{padding:8px 10px; border-radius:5px; cursor:pointer; color:var(--muted); font-size:15px; margin-bottom:2px; font-weight:500}
+  .snav:hover{background:#393c41; color:var(--text)}
+  .snav.active{background:#3f4248; color:#fff}
+  .snav.danger{color:var(--red)} .snav.danger:hover{background:var(--red); color:#fff}
+  .snav-sep{height:1px; background:var(--border); margin:8px 10px}
+  .settings-content{flex:1; padding:60px 40px; overflow-y:auto; position:relative; max-width:740px}
+  .settings-close{position:absolute; top:60px; right:40px; width:40px; height:40px; border-radius:50%; border:2px solid var(--muted);
+    background:none; color:var(--muted); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center}
+  .settings-close:hover{background:#3f4248; color:var(--text)}
+  .settings-content h1{font-size:20px; margin-bottom:20px; font-weight:700}
+  .settings-section{display:none} .settings-section.active{display:block}
+  .acct-card{background:var(--bg3); border-radius:8px; overflow:hidden}
+  .acct-banner{height:90px; background:linear-gradient(135deg,var(--accent),#3641a8)}
+  .acct-head{display:flex; align-items:center; gap:14px; padding:0 16px 16px; margin-top:-30px}
+  .acct-head .pava{width:80px; height:80px; border-radius:50%; border:6px solid var(--bg3); background:var(--accent);
+    background-size:cover; background-position:center; display:flex; align-items:center; justify-content:center; font-size:30px; font-weight:700; color:#fff}
+  .acct-head .nm{font-size:20px; font-weight:700; margin-top:30px}
+  .acct-field{display:flex; align-items:center; justify-content:space-between; gap:10px; background:#2b2d31;
+    margin:8px 16px; padding:12px 14px; border-radius:6px}
+  .acct-field .k{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px}
+  .acct-field .v{font-size:15px; color:var(--text); margin-top:3px}
+  .acct-field .btn{width:auto; padding:8px 16px; font-size:14px}
 
   /* Sol kanal cubugu */
   .sidebar{width:240px; background:var(--bg2); display:flex; flex-direction:column; flex-shrink:0; z-index:30;
@@ -67,20 +122,20 @@
   .switch input:checked + .track{background:var(--accent)}
   .switch input:checked + .track::before{transform:translateX(20px)}
   .scroll{flex:1; overflow-y:auto}
-  .nav-btn{margin:8px; padding:11px; border-radius:10px; background:#302e2a; color:var(--text); cursor:pointer;
+  .nav-btn{margin:8px; padding:11px; border-radius:10px; background:#35373c; color:var(--text); cursor:pointer;
     display:flex; align-items:center; gap:8px; font-size:14px; position:relative}
-  .nav-btn:hover{background:#3a3833}
+  .nav-btn:hover{background:#404249}
   .badge{position:absolute; right:10px; background:var(--red); color:#fff; border-radius:10px;
     font-size:11px; padding:1px 7px; font-weight:700}
   .ch-group{padding:14px 8px 4px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px}
   .channel{padding:9px 10px; margin:1px 8px; border-radius:8px; cursor:pointer; color:var(--muted);
     display:flex; align-items:center; gap:6px; font-size:15px}
-  .channel:hover{background:#302e2a; color:var(--text)}
-  .channel.active{background:#3a3833; color:var(--text)}
+  .channel:hover{background:#35373c; color:var(--text)}
+  .channel.active{background:#404249; color:var(--text)}
   .voice-members{margin:0 8px 4px 22px}
   .voice-member{font-size:13px; color:var(--muted); padding:3px 0; display:flex; align-items:center; gap:6px}
   .me-bar{padding:8px 10px; background:var(--bg3); display:flex; align-items:center; gap:8px; cursor:pointer}
-  .me-bar:hover{background:#36383d}
+  .me-bar:hover{background:#35373c}
   .me-bar .gear{margin-left:auto; color:var(--muted); font-size:18px}
 
   /* Orta */
@@ -102,7 +157,7 @@
   .msg a.file{display:inline-flex; gap:8px; align-items:center; margin-top:6px; background:var(--bg2);
     padding:10px 14px; border-radius:8px; color:#00a8fc; text-decoration:none; max-width:80vw}
   .inputbar{padding:0 14px 16px}
-  .inputrow{background:#302e2a; border:1px solid var(--border); border-radius:14px; display:flex; align-items:center; padding:0 8px}
+  .inputrow{background:#35373c; border:1px solid var(--border); border-radius:14px; display:flex; align-items:center; padding:0 8px}
   .inputrow:focus-within{border-color:var(--accent)}
   .inputrow input{flex:1; background:none; border:none; color:var(--text); padding:14px 8px; outline:none}
   .iconbtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;padding:6px}
@@ -126,7 +181,7 @@
     border-left:1px solid var(--border)}
   .members h3{color:var(--muted); font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.5px}
   .member{display:flex; align-items:center; gap:8px; padding:7px; border-radius:8px; font-size:14px; cursor:pointer}
-  .member:hover{background:#302e2a}
+  .member:hover{background:#35373c}
   .member .dot{width:9px;height:9px;border-radius:50%;background:var(--green); margin-left:auto}
 
   /* Arkadaslar gorunumu */
@@ -163,12 +218,17 @@
   @media (max-width: 820px){
     .topbar .menu-btn,.topbar .ppl-btn{display:block}
     .sidebar,.members{position:fixed; top:0; bottom:0; transition:transform .25s ease}
-    .sidebar{left:0; transform:translateX(-100%); box-shadow:2px 0 12px rgba(0,0,0,.4)}
+    .sidebar{left:72px; transform:translateX(calc(-100% - 72px)); box-shadow:2px 0 12px rgba(0,0,0,.4)}
     .sidebar.open{transform:translateX(0)}
     .members{right:0; width:240px; transform:translateX(100%); box-shadow:-2px 0 12px rgba(0,0,0,.4)}
     .members.open{transform:translateX(0)}
     .backdrop.show{display:block}
     .video-grid{grid-template-columns:1fr}
+    .settings-nav{width:150px; padding:54px 4px 16px}
+    .settings-nav .inner{width:142px}
+    .snav{font-size:14px; padding:8px}
+    .settings-content{padding:54px 18px}
+    .settings-close{right:16px; top:16px}
   }
 </style>
 </head>
@@ -207,6 +267,14 @@
   <div class="layout">
     <div class="backdrop" id="backdrop" onclick="closeDrawers()"></div>
 
+    <!-- SUNUCU IKON CUBUGU -->
+    <div class="rail" id="rail">
+      <div class="rail-item home" title="Direkt Mesajlar" onclick="openChannel('genel')">💬</div>
+      <div class="rail-sep"></div>
+      <div class="rail-item server active" id="railServer" title="SUICIDEHOTLINE">SH</div>
+      <div class="rail-item add" title="Sunucu Ekle" onclick="toast('Yeni sunucu ekleme yakinda 🙂')">+</div>
+    </div>
+
     <!-- SOL -->
     <div class="sidebar" id="sidebar">
       <div class="server-name"><span class="rec-dot" id="recDot"></span>SUICIDEHOTLINE</div>
@@ -217,7 +285,7 @@
         <div class="ch-group">Sesli Kanallar</div>
         <div id="voiceChannels"></div>
       </div>
-      <div class="me-bar" onclick="openEditProfile()">
+      <div class="me-bar" onclick="openSettings()">
         <div class="ava" id="meAva" style="width:34px;height:34px">?</div>
         <div id="meName" style="font-weight:600; overflow:hidden; text-overflow:ellipsis"></div>
         <div class="gear">⚙️</div>
@@ -297,19 +365,70 @@
       <input type="file" id="avatarInput" accept="image/*" style="display:none" onchange="uploadAvatar()">
       <div class="label" style="margin-top:16px">Hakkinda (bio)</div>
       <textarea id="emBio" maxlength="300" placeholder="Kendinden bahset..."></textarea>
-      <div class="label">Gorunum</div>
+      <div class="row">
+        <button class="btn sec" onclick="closeModal('editModal')">Kapat</button>
+        <button class="btn" onclick="saveProfile()">Kaydet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KULLANICI AYARLARI (tam ekran) -->
+<div class="settings-overlay" id="settings">
+  <div class="settings-nav">
+    <div class="inner">
+      <div class="settings-nav-title">Kullanici Ayarlari</div>
+      <div class="snav active" id="snav-account" onclick="settingsTab('account')">Hesabim</div>
+      <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
+      <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
+      <div class="snav-sep"></div>
+      <div class="snav danger" onclick="logout()">Cikis Yap</div>
+    </div>
+  </div>
+  <div class="settings-content">
+    <button class="settings-close" onclick="closeSettings()" title="Kapat (Esc)">✕</button>
+
+    <!-- Hesabim -->
+    <div class="settings-section active" id="sec-account">
+      <h1>Hesabim</h1>
+      <div class="acct-card">
+        <div class="acct-banner"></div>
+        <div class="acct-head">
+          <div class="pava" id="stAva"></div>
+          <div class="nm" id="stName"></div>
+        </div>
+        <div class="acct-field">
+          <div><div class="k">Kullanici Adi</div><div class="v" id="stUser"></div></div>
+        </div>
+        <div class="acct-field">
+          <div><div class="k">E-posta</div><div class="v" id="stEmail"></div></div>
+        </div>
+        <div class="acct-field">
+          <div><div class="k">Profil</div><div class="v">Foto ve hakkinda yazini duzenle</div></div>
+          <button class="btn" onclick="closeSettings();openEditProfile()">Duzenle</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profil -->
+    <div class="settings-section" id="sec-profile">
+      <h1>Profil</h1>
+      <div class="acct-card" style="padding:16px">
+        <div class="label">Profil Fotografi</div>
+        <button class="btn sec" onclick="closeSettings();openEditProfile()">📷 Foto & Bio Duzenle</button>
+      </div>
+    </div>
+
+    <!-- Gorunum -->
+    <div class="settings-section" id="sec-appearance">
+      <h1>Gorunum</h1>
       <div class="setting-row">
-        <span>🔴 REC yanip sonmesi</span>
+        <span>🔴 REC yanip sonmesi (sol ustteki kirmizi daire)</span>
         <label class="switch">
           <input type="checkbox" id="recBlinkToggle" onchange="toggleRecBlink()">
           <span class="track"></span>
         </label>
       </div>
-      <div class="row">
-        <button class="btn sec" onclick="closeModal('editModal')">Kapat</button>
-        <button class="btn" onclick="saveProfile()">Kaydet</button>
-      </div>
-      <button class="btn danger" style="margin-top:10px" onclick="logout()">🚪 Cikis Yap</button>
     </div>
   </div>
 </div>
@@ -356,6 +475,31 @@ function toggleRecBlink(){
   applyRecBlink();
 }
 applyRecBlink();
+
+// ======== Kullanici Ayarlari ========
+function openSettings(){
+  settingsTab('account');
+  $('settings').classList.add('open');
+  applyRecBlink();
+  closeDrawers();
+  // Hesap bilgisini doldur
+  const ini = initials(username);
+  const url = myProfile.avatar;
+  const a=$('stAva');
+  if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=ini; }
+  $('stName').textContent=username; $('stUser').textContent=username; $('stEmail').textContent='—';
+  fetch('/api/me?token='+encodeURIComponent(token)).then(r=>r.ok?r.json():null).then(d=>{
+    if(d && d.email) $('stEmail').textContent=d.email;
+  }).catch(()=>{});
+}
+function closeSettings(){ $('settings').classList.remove('open'); }
+function settingsTab(name){
+  ['account','profile','appearance'].forEach(n=>{
+    $('sec-'+n).classList.toggle('active', n===name);
+    $('snav-'+n).classList.toggle('active', n===name);
+  });
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('settings').classList.contains('open')) closeSettings(); });
 
 // ======== Giris / Kayit ========
 function showAuth(which){
@@ -488,7 +632,13 @@ function openChannel(c){
 }
 
 // ======== Mesajlar ========
-function renderMessages(list){ $('messages').innerHTML=''; list.forEach(appendMessage); }
+function renderMessages(list){
+  $('messages').innerHTML =
+    `<div class="ch-welcome"><div class="ico">#</div>`+
+    `<h2>#${esc(currentChannel)} kanalina hos geldin!</h2>`+
+    `<p>Burasi <b>#${esc(currentChannel)}</b> kanalinin baslangici. Ilk mesaji sen yaz! 🎉</p></div>`;
+  list.forEach(appendMessage);
+}
 function appendMessage(m){
   const time=new Date(m.ts).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
   let content='';
