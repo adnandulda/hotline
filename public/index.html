@@ -153,6 +153,11 @@
 
   .messages{flex:1; overflow-y:auto; padding:14px; -webkit-overflow-scrolling:touch}
   .msg{display:flex; gap:12px; padding:6px 0}
+  .msg.grouped{padding:1px 0 1px 52px; position:relative}
+  .msg.grouped .gtime{position:absolute; left:0; width:52px; text-align:center; top:4px; font-size:10px;
+    color:var(--muted); opacity:0}
+  .msg.grouped:hover{background:rgba(79,84,92,.10); border-radius:4px}
+  .msg.grouped:hover .gtime{opacity:1}
   .msg .body{min-width:0}
   .msg .head{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
   .msg .name{font-weight:600; color:var(--text); cursor:pointer}
@@ -178,9 +183,10 @@
   .tile .label{position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.6); padding:3px 10px; border-radius:6px; font-size:13px}
   .tile .novid{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:700; color:#fff; background:var(--accent); background-size:cover; background-position:center}
   .controls{display:none; gap:10px; justify-content:center; padding:14px; background:var(--bg2); flex-wrap:wrap}
-  .ctrl{width:52px;height:52px;border-radius:50%;border:none;background:#4e5058;color:#fff;cursor:pointer;font-size:20px}
+  .ctrl{width:52px;height:52px;border-radius:50%;border:none;background:#4e5058;color:#fff;cursor:pointer;font-size:20px;transition:.12s}
   .ctrl:hover{background:#6d6f78}
   .ctrl.on{background:#fff;color:#000}
+  .ctrl.muted{background:var(--red);color:#fff}
   .ctrl.danger{background:var(--red)}
 
   /* Sag uyeler */
@@ -334,10 +340,11 @@
       <!-- Video -->
       <div class="video-area" id="videoArea"><div class="video-grid" id="videoGrid"></div></div>
       <div class="controls" id="controls">
-        <button class="ctrl" id="btnMic" onclick="toggleMic()">🎤</button>
-        <button class="ctrl" id="btnCam" onclick="toggleCam()">📷</button>
-        <button class="ctrl" id="btnScreen" onclick="toggleScreen()">🖥️</button>
-        <button class="ctrl danger" onclick="leaveVoice()">📞</button>
+        <button class="ctrl" id="btnMic" onclick="toggleMic()" title="Mikrofon (sustur/ac)">🎤</button>
+        <button class="ctrl" id="btnDeaf" onclick="toggleDeafen()" title="Sesi kapat (sagirlastir)">🎧</button>
+        <button class="ctrl" id="btnCam" onclick="toggleCam()" title="Kamera ac/kapat">📷</button>
+        <button class="ctrl" id="btnScreen" onclick="toggleScreen()" title="Ekran paylas">🖥️</button>
+        <button class="ctrl danger" onclick="leaveVoice()" title="Ayril">📞</button>
       </div>
     </div>
 
@@ -485,8 +492,16 @@ const sentRequests = new Set();
 
 // Sesli
 let localStream=null, screenStream=null, currentVoiceRoom=null;
+let micOn=true, deafened=false, micBeforeDeafen=true;   // sesli durum
 const peers = new Map();
-const RTC_CONF = { iceServers:[{urls:'stun:stun.l.google.com:19302'}] };
+// STUN + ucretsiz TURN (openrelay) -> farkli aglardaki kisiler de baglanabilsin
+const RTC_CONF = { iceServers:[
+  { urls:'stun:stun.l.google.com:19302' },
+  { urls:'stun:stun1.l.google.com:19302' },
+  { urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' },
+] };
 
 const $ = id => document.getElementById(id);
 const esc = s => (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -660,7 +675,8 @@ function handle(m){
       myFriends = m.friends; updateReqBadge();
       if($('friendsView').style.display==='block') renderFriends(); break;
     case 'voice-peers': m.peers.forEach(pid=>callPeer(pid)); break;
-    case 'voice-leave': removePeer(m.id); break;
+    case 'voice-join': if(currentVoiceRoom && m.room===currentVoiceRoom) sfx('join'); break;
+    case 'voice-leave': if(currentVoiceRoom && m.room===currentVoiceRoom) sfx('leave'); removePeer(m.id); break;
     case 'signal': onSignal(m.from, m.signal); break;
   }
 }
@@ -752,6 +768,7 @@ function openDM(user){
   renderChannels();
   fetch('/api/dm?token='+encodeURIComponent(token)+'&with='+encodeURIComponent(user))
     .then(r=>r.json()).then(list=>{
+      lastMsgUser=null; lastMsgTs=0;
       $('messages').innerHTML = `<div class="ch-welcome"><div class="ico">@</div><h2>${esc(user)}</h2>`+
         `<p>Bu, <b>${esc(user)}</b> ile ozel sohbetinin baslangici.</p></div>`;
       (list||[]).forEach(dm=>{ cacheProfile(dm.from,{avatar:dm.avatar}); appendMessage({user:dm.from, text:dm.text, file:dm.file, ts:dm.ts}); });
@@ -774,7 +791,9 @@ function openChannel(c){
 }
 
 // ======== Mesajlar ========
+let lastMsgUser=null, lastMsgTs=0;
 function renderMessages(list){
+  lastMsgUser=null; lastMsgTs=0;
   $('messages').innerHTML =
     `<div class="ch-welcome"><div class="ico">#</div>`+
     `<h2>#${esc(currentChannel)} kanalina hos geldin!</h2>`+
@@ -789,11 +808,20 @@ function appendMessage(m){
       ? `<img class="att" src="${m.file.url}" alt="">`
       : `<a class="file" href="${m.file.url}" download="${esc(m.file.name)}" target="_blank">📎 ${esc(m.file.name)}</a>`;
   } else content = `<div class="text">${esc(m.text)}</div>`;
-  const el=document.createElement('div'); el.className='msg';
-  el.innerHTML = `${avaHTML(m.user,40)}<div class="body"><div class="head">
-    <span class="name" onclick="openProfile('${esc(m.user)}')">${esc(m.user)}</span>
-    <span class="time">${time}</span></div>${content}</div>`;
+  // Ayni kisi 5 dk icinde ard arda yazdiysa: avatar/isim tekrar gosterilmez
+  const grouped = lastMsgUser && m.user && m.user.toLowerCase()===lastMsgUser.toLowerCase() && (m.ts - lastMsgTs) < 5*60*1000;
+  const el=document.createElement('div');
+  if(grouped){
+    el.className='msg grouped';
+    el.innerHTML = `<span class="gtime">${time}</span>${content}`;
+  } else {
+    el.className='msg';
+    el.innerHTML = `${avaHTML(m.user,40)}<div class="body"><div class="head">
+      <span class="name" onclick="openProfile('${esc(m.user)}')">${esc(m.user)}</span>
+      <span class="time">${time}</span></div>${content}</div>`;
+  }
   $('messages').appendChild(el);
+  lastMsgUser=m.user; lastMsgTs=m.ts;
   $('messages').scrollTop=$('messages').scrollHeight;
 }
 function sendMsg(){
@@ -952,23 +980,26 @@ async function joinVoice(room){
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false}); }
   catch(e){ alert('Mikrofona erisilemedi: '+e.message); return; }
   currentDM=null; currentVoiceRoom=room;
+  micOn=true; deafened=false; applyMic(); updateVoiceBtns();
   $('messages').style.display='none'; $('inputbar').style.display='none'; $('friendsView').style.display='none';
   $('videoArea').style.display='block'; $('controls').style.display='flex';
   $('topIcon').textContent='🔊'; $('topName').textContent=room;
-  $('btnMic').classList.add('on');
   addTile('local', username+' (sen)', localStream, true);
   renderChannels(); closeDrawers();
+  sfx('join');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,action:'join',room})});
 }
 async function leaveVoice(){
   if(!currentVoiceRoom) return;
+  sfx('leave');
   fetch('/api/voice',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:clientId,action:'leave',room:currentVoiceRoom})});
   peers.forEach((pc,id)=>{pc.close();removeTile(id);}); peers.clear();
   if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
   if(screenStream){screenStream.getTracks().forEach(t=>t.stop());screenStream=null;}
   removeTile('local'); currentVoiceRoom=null;
+  micOn=true; deafened=false;
   $('videoArea').style.display='none'; $('controls').style.display='none';
   ['btnCam','btnScreen'].forEach(b=>$(b).classList.remove('on'));
   openChannel(currentChannel);
@@ -1006,7 +1037,10 @@ function addTile(id,label,stream,muted){
   if(!tile){ tile=document.createElement('div'); tile.className='tile'; tile.id='tile-'+id;
     tile.innerHTML=`<div class="novid">${initials(label)}</div><video autoplay playsinline ${muted?'muted':''}></video><div class="label">${esc(label)}</div>`;
     $('videoGrid').appendChild(tile); }
-  tile.querySelector('video').srcObject=stream; updateTileVideo(id);
+  const v=tile.querySelector('video');
+  v.srcObject=stream;
+  if(id!=='local') v.muted = deafened;   // sagirken karsi tarafin sesi kapali
+  updateTileVideo(id);
 }
 function updateTileVideo(id){
   const tile=document.getElementById('tile-'+id); if(!tile) return;
@@ -1016,10 +1050,49 @@ function updateTileVideo(id){
 }
 function removeTile(id){ const t=document.getElementById('tile-'+id); if(t) t.remove(); }
 
+// --- Mikrofon / sagirlastirma ---
+function applyMic(){ const tr=localStream&&localStream.getAudioTracks()[0]; if(tr) tr.enabled = micOn && !deafened; }
+function applyRemoteAudio(){   // sagirken karsi tarafin sesini kapat
+  document.querySelectorAll('#videoGrid [id^="tile-"]:not(#tile-local) video').forEach(v=>v.muted=deafened);
+}
+function updateVoiceBtns(){
+  const mic=$('btnMic'), deaf=$('btnDeaf');
+  if(mic){ const off = !micOn || deafened; mic.textContent = off ? '🔇' : '🎤'; mic.classList.toggle('muted', off); }
+  if(deaf){ deaf.textContent = deafened ? '🔇' : '🎧'; deaf.classList.toggle('muted', deafened); }
+}
 function toggleMic(){
-  if(!localStream) return; const tr=localStream.getAudioTracks()[0]; if(!tr) return;
-  tr.enabled=!tr.enabled; $('btnMic').classList.toggle('on',tr.enabled);
-  $('btnMic').textContent=tr.enabled?'🎤':'🔇';
+  if(!localStream) return;
+  if(deafened){ deafened=false; applyRemoteAudio(); micOn=micBeforeDeafen; } // mute'a basinca sagirlik kalkar
+  micOn=!micOn; applyMic(); updateVoiceBtns(); sfx(micOn?'unmute':'mute');
+}
+function toggleDeafen(){
+  if(!localStream) return;
+  deafened=!deafened;
+  if(deafened){ micBeforeDeafen=micOn; micOn=false; } else { micOn=micBeforeDeafen; }
+  applyMic(); applyRemoteAudio(); updateVoiceBtns(); sfx(deafened?'deafen':'undeafen');
+}
+
+// --- Ses efektleri (WebAudio, harici dosya yok) ---
+let _actx=null;
+function sfx(name){
+  try{
+    _actx = _actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(_actx.state==='suspended') _actx.resume();
+    const seqs={
+      join:[[523,.09],[784,.12]], leave:[[659,.09],[392,.14]],
+      mute:[[440,.10]], unmute:[[660,.10]],
+      deafen:[[440,.08],[300,.13]], undeafen:[[500,.08],[720,.13]]
+    };
+    const seq=seqs[name]; if(!seq) return;
+    let t=_actx.currentTime;
+    for(const [f,d] of seq){
+      const o=_actx.createOscillator(), g=_actx.createGain();
+      o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(_actx.destination);
+      g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.09,t+.012);
+      g.gain.exponentialRampToValueAtTime(.0001,t+d);
+      o.start(t); o.stop(t+d+.02); t+=d;
+    }
+  }catch(e){}
 }
 async function toggleCam(){
   if(!localStream) return;
