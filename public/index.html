@@ -117,6 +117,9 @@
   /* @bahsetme */
   .mention{background:rgba(88,101,242,.3); color:#c9cdfb; border-radius:4px; padding:0 3px; font-weight:600; cursor:pointer}
   .msg.mentioned{background:rgba(240,178,50,.10); border-left:3px solid #f0b232; border-radius:3px}
+  /* Rol etiketleri */
+  .role-chip{border:1px solid var(--border); border-radius:12px; padding:3px 10px; font-size:12px; cursor:pointer; color:var(--text); opacity:.65; user-select:none}
+  .role-chip.on{opacity:1; font-weight:600}
   .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
     display:flex; align-items:center; gap:9px}
   .rec-dot{width:12px; height:12px; border-radius:50%; background:#ff3b30; flex-shrink:0;
@@ -486,6 +489,7 @@
       <div class="stat" id="pmStat"></div>
       <div class="label">Hakkinda</div>
       <div class="bio" id="pmBio"></div>
+      <div id="pmAdmin" style="margin-bottom:10px"></div>
       <div class="row" id="pmActions"></div>
     </div>
   </div>
@@ -522,6 +526,7 @@
       <div class="snav-sep"></div>
       <div class="settings-nav-title">Sunucu</div>
       <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
+      <div class="snav" id="snav-roles" onclick="settingsTab('roles')" style="display:none">Roller</div>
       <div class="snav-sep"></div>
       <div class="snav danger" onclick="logout()">Cikis Yap</div>
     </div>
@@ -591,6 +596,31 @@
     </div>
 
     <!-- Sunucu Ayarlari -->
+    <!-- Roller -->
+    <div class="settings-section" id="sec-roles">
+      <h1>Roller</h1>
+      <div id="rolesList"></div>
+      <div class="acct-card" style="padding:16px; margin-top:14px">
+        <div class="label" id="roleEditTitle">Yeni Rol</div>
+        <input type="hidden" id="roleEditId">
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px">
+          <input id="roleName" placeholder="Rol adi" maxlength="30"
+            style="flex:1; padding:11px; border-radius:8px; border:1px solid var(--border); background:var(--bg2); color:var(--text); outline:none">
+          <input id="roleColor" type="color" value="#e74c3c" title="Rol rengi" style="width:46px; height:42px; border:none; background:none; cursor:pointer">
+        </div>
+        <div class="label">Yetkiler</div>
+        <label class="setting-row"><span>Kanallari yonet (ekle/sil/adlandir)</span><input type="checkbox" id="perm-manageChannels"></label>
+        <label class="setting-row"><span>Sunucuyu yonet (isim/ikon)</span><input type="checkbox" id="perm-manageServer"></label>
+        <label class="setting-row"><span>Rolleri yonet</span><input type="checkbox" id="perm-manageRoles"></label>
+        <label class="setting-row"><span>Uye atma (kick)</span><input type="checkbox" id="perm-kickMembers"></label>
+        <label class="setting-row"><span>Mesajlari yonet (baskasininkini sil)</span><input type="checkbox" id="perm-manageMessages"></label>
+        <div class="row" style="margin-top:6px">
+          <button class="btn sec" onclick="resetRoleForm()">Temizle</button>
+          <button class="btn" onclick="saveRole()">Kaydet</button>
+        </div>
+      </div>
+    </div>
+
     <div class="settings-section" id="sec-server">
       <h1>Sunucu Ayarlari</h1>
       <div id="svOwnerNote" style="display:none; background:rgba(218,55,60,.15); border:1px solid var(--red); color:#f0b6b8; border-radius:8px; padding:12px; margin-bottom:14px; font-size:14px">
@@ -720,9 +750,9 @@ function openSettings(){
 }
 function closeSettings(){ $('settings').classList.remove('open'); }
 function settingsTab(name){
-  ['account','profile','appearance','voice','server'].forEach(n=>{
+  ['account','profile','appearance','voice','server','roles'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
-    $('snav-'+n).classList.toggle('active', n===name);
+    const nav=$('snav-'+n); if(nav) nav.classList.toggle('active', n===name);
   });
   if(name==='voice'){
     $('pttToggle').checked = pttOn;
@@ -734,11 +764,12 @@ function settingsTab(name){
     const a=$('svIcon');
     if(serverInfo.icon){ a.style.backgroundImage=`url('${serverInfo.icon}')`; a.textContent=''; }
     else { a.style.backgroundImage=''; a.textContent=(serverInfo.name||'S').slice(0,2).toUpperCase(); }
-    const owner = amOwner();
-    $('svName').disabled = !owner;
-    $('svOwnerNote').style.display = owner ? 'none' : 'block';
-    document.querySelectorAll('#sec-server .owner-edit').forEach(e=>e.style.display = owner ? '' : 'none');
+    const can = hasPermClient('manageServer');
+    $('svName').disabled = !can;
+    $('svOwnerNote').style.display = can ? 'none' : 'block';
+    document.querySelectorAll('#sec-server .owner-edit').forEach(e=>e.style.display = can ? '' : 'none');
   }
+  if(name==='roles') renderRolesTab();
 }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('settings').classList.contains('open')) closeSettings(); });
 
@@ -881,6 +912,10 @@ function handle(m){
     }
     case 'server-members':
       if(m.server===currentServer){ serverInfo.members=m.members; renderMembers(); }
+      break;
+    case 'roles':
+      if(m.server===currentServer){ serverInfo.roles=m.roles||[]; serverInfo.memberRoles=m.memberRoles||{};
+        renderMembers(); renderChannels(); applyOwnerUI(); if($('settings').classList.contains('open')) renderRolesTab(); }
       break;
     case 'server-deleted':
       myServers = myServers.filter(s=>s.id!==m.server);
@@ -1034,10 +1069,23 @@ async function joinServer(){
   }catch(e){ err.textContent='Baglanti hatasi'; }
 }
 
-// ======== Kanallar ========
+// ======== Yetkiler ========
 function amOwner(){ return serverInfo.owner && username && serverInfo.owner.toLowerCase()===username.toLowerCase(); }
+function myServerRoleIds(){ return (serverInfo.memberRoles && serverInfo.memberRoles[(username||'').toLowerCase()]) || []; }
+function hasPermClient(perm){
+  if(amOwner()) return true;
+  const ids=myServerRoleIds(), roles=serverInfo.roles||[];
+  return ids.some(id=>{ const r=roles.find(x=>x.id===id); return r && r.perms && r.perms[perm]; });
+}
+function roleColorOf(user){
+  const ids=(serverInfo.memberRoles && serverInfo.memberRoles[user.toLowerCase()])||[];
+  for(const r of (serverInfo.roles||[])){ if(ids.includes(r.id) && r.color) return r.color; }
+  return null;
+}
+
+// ======== Kanallar ========
 function chToolsHTML(kind,i){
-  return amOwner() ? `<span class="ch-tools">
+  return hasPermClient('manageChannels') ? `<span class="ch-tools">
     <span onclick="event.stopPropagation();renameChannel('${kind}',${i})" title="Yeniden adlandir">✎</span>
     <span onclick="event.stopPropagation();deleteChannel('${kind}',${i})" title="Sil">🗑</span></span>` : '';
 }
@@ -1064,7 +1112,11 @@ function applyCatCollapse(){
     if(c) c.textContent = catCollapsed[k] ? '▸' : '▾';
   });
 }
-function applyOwnerUI(){ const show=amOwner(); document.querySelectorAll('.owner-only').forEach(e=>e.style.display = show?'':'none'); }
+function applyOwnerUI(){
+  const ch=hasPermClient('manageChannels');
+  document.querySelectorAll('.owner-only').forEach(e=>e.style.display = ch?'':'none');
+  const rolesNav=$('snav-roles'); if(rolesNav) rolesNav.style.display = hasPermClient('manageRoles')?'':'none';
+}
 async function copyInvite(){
   if(!currentServer){ toast('Once bir sunucu ac'); return; }
   let code = serverInfo.invite;
@@ -1077,6 +1129,73 @@ async function copyInvite(){
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(code).then(()=>toast('🔗 Davet kodu kopyalandi: '+code)).catch(()=>prompt('Davet kodu (kopyala):', code));
   } else prompt('Davet kodu (kopyala):', code);
+}
+
+// ======== Roller ========
+const PERM_LIST = ['manageChannels','manageServer','manageRoles','kickMembers','manageMessages'];
+function renderRolesTab(){
+  const roles=serverInfo.roles||[];
+  $('rolesList').innerHTML = roles.length ? roles.map(r=>{
+    const permCount=Object.keys(r.perms||{}).filter(k=>r.perms[k]).length;
+    return `<div class="frow" style="cursor:pointer" onclick="editRole('${r.id}')">
+      <span style="width:14px;height:14px;border-radius:50%;background:${r.color};flex-shrink:0"></span>
+      <div class="who"><div class="n" style="color:${r.color}">${esc(r.name)}</div><div class="s">${permCount} yetki</div></div>
+      <button class="mini no" onclick="event.stopPropagation();deleteRole('${r.id}')">Sil</button></div>`;
+  }).join('') : '<div style="color:var(--muted);padding:8px">Henuz rol yok. Asagidan olustur.</div>';
+}
+function resetRoleForm(){
+  $('roleEditId').value=''; $('roleEditTitle').textContent='Yeni Rol';
+  $('roleName').value=''; $('roleColor').value='#e74c3c';
+  PERM_LIST.forEach(p=>$('perm-'+p).checked=false);
+}
+function editRole(id){
+  const r=(serverInfo.roles||[]).find(x=>x.id===id); if(!r) return;
+  $('roleEditId').value=r.id; $('roleEditTitle').textContent='Rol Duzenle: '+r.name;
+  $('roleName').value=r.name; $('roleColor').value=r.color||'#e74c3c';
+  PERM_LIST.forEach(p=>$('perm-'+p).checked=!!(r.perms&&r.perms[p]));
+}
+function saveRole(){
+  if(!currentServer) return;
+  const name=$('roleName').value.trim(); if(!name){ toast('Rol adi gir'); return; }
+  const perms={}; PERM_LIST.forEach(p=>{ if($('perm-'+p).checked) perms[p]=true; });
+  const id=$('roleEditId').value;
+  const body={ id:clientId, server:currentServer, action: id?'edit':'create', name, color:$('roleColor').value, perms };
+  if(id) body.roleId=id;
+  fetch('/api/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Hata'); } else resetRoleForm(); });
+}
+function deleteRole(id){
+  if(!confirm('Bu rolu silmek istiyor musun?')) return;
+  fetch('/api/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,server:currentServer,action:'delete',roleId:id})});
+}
+function renderProfileAdmin(user){
+  const el=$('pmAdmin'); el.innerHTML='';
+  if(!currentServer || user.toLowerCase()===username.toLowerCase()) return;
+  if(!(serverInfo.members||[]).some(m=>m.toLowerCase()===user.toLowerCase())) return;
+  let html='';
+  if(hasPermClient('manageRoles') && (serverInfo.roles||[]).length){
+    const ids=(serverInfo.memberRoles&&serverInfo.memberRoles[user.toLowerCase()])||[];
+    html += `<div class="label">Roller</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">`;
+    html += (serverInfo.roles||[]).map(r=>{
+      const has=ids.includes(r.id);
+      return `<span class="role-chip ${has?'on':''}" style="border-color:${r.color};${has?'background:'+r.color+'33':''}" onclick="toggleMemberRole('${esc(user)}','${r.id}',${has})">${esc(r.name)}</span>`;
+    }).join('');
+    html += `</div>`;
+  }
+  if(hasPermClient('kickMembers') && user.toLowerCase()!==(serverInfo.owner||'').toLowerCase()){
+    html += `<button class="btn danger" onclick="kickMember('${esc(user)}')">👢 Sunucudan At</button>`;
+  }
+  el.innerHTML=html;
+}
+function toggleMemberRole(user, roleId, has){
+  fetch('/api/member-role',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,server:currentServer,target:user,roleId,op:has?'remove':'add'})})
+    .then(()=>setTimeout(()=>renderProfileAdmin(user),200));
+}
+function kickMember(user){
+  if(!confirm(user+' kullanicisini sunucudan atmak istiyor musun?')) return;
+  fetch('/api/kick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,server:currentServer,target:user})})
+    .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Hata'); } else closeModal('profileModal'); });
 }
 
 // ======== Kanal yonetimi ========
@@ -1184,7 +1303,7 @@ function actionsHTML(m){
   let h = `<span class="ma" onclick="openReactPicker(event,'${m.id}')" title="Tepki ekle">😀</span>`;
   h += `<span class="ma" onclick="startReply('${m.id}')" title="Yanitla">↩</span>`;
   if(mine && !m.file) h += `<span class="ma" onclick="startEdit('${m.id}')" title="Duzenle">✎</span>`;
-  if(mine) h += `<span class="ma" onclick="deleteMsg('${m.id}')" title="Sil">🗑</span>`;
+  if(mine || hasPermClient('manageMessages')) h += `<span class="ma" onclick="deleteMsg('${m.id}')" title="Sil">🗑</span>`;
   return h;
 }
 function msgEl(id){ return document.querySelector(`#messages [data-id="${id}"]`); }
@@ -1333,8 +1452,10 @@ function renderMembers(){
     const crown = (serverInfo.owner && u.user.toLowerCase()===serverInfo.owner.toLowerCase()) ? ' <span title="Sunucu sahibi">👑</span>' : '';
     const si = statusInfo(u.status, u.online);
     const title = u.customStatus ? ` title="${esc(u.customStatus)}"` : '';
+    const col = roleColorOf(u.user);
+    const nameStyle = col ? ` style="color:${col}"` : '';
     return `<div class="member ${u.online?'':'off'}"${title} onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
-    `<span class="mname">${esc(u.user)}${crown}</span><span class="dot" style="background:${si.color}"></span></div>`;
+    `<span class="mname"${nameStyle}>${esc(u.user)}${crown}</span><span class="dot" style="background:${si.color}"></span></div>`;
   };
   let html = on.map(row).join('');
   if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(row).join('');
@@ -1367,6 +1488,7 @@ function openProfile(user){
       }
       act.innerHTML = btns;
     }
+    renderProfileAdmin(p.user);
     openModal('profileModal');
   });
 }

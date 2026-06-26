@@ -66,7 +66,11 @@ function isMember(sid, user){ const s=servers[sid]; return !!(s && s.members.som
 function isServerOwner(sid, user){ const s=servers[sid]; return !!(s && key(s.owner)===key(user)); }
 function userServers(user){ return Object.values(servers).filter(s=>s.members.some(m=>key(m)===key(user))); }
 function serverSummary(s){ return { id:s.id, name:s.name, icon:s.icon||null, owner:s.owner }; }
-function serverFull(s){ return { id:s.id, name:s.name, icon:s.icon||null, owner:s.owner, members:s.members, text:s.text, voice:s.voice }; }
+function srvRoles(s){ if(!s.roles) s.roles=[]; if(!s.memberRoles) s.memberRoles={}; return s; }
+function rolesOf(s, user){ srvRoles(s); return (s.memberRoles[key(user)]||[]).map(rid=>s.roles.find(r=>r.id===rid)).filter(Boolean); }
+function hasPerm(s, user, perm){ if(key(s.owner)===key(user)) return true; return rolesOf(s,user).some(r=>r.perms && r.perms[perm]); }
+function serverFull(s){ srvRoles(s); return { id:s.id, name:s.name, icon:s.icon||null, owner:s.owner, members:s.members, text:s.text, voice:s.voice, roles:s.roles, memberRoles:s.memberRoles }; }
+const ROLE_PERMS = ['manageChannels','manageServer','manageRoles','kickMembers','manageMessages'];
 function chHistory(sid, ch){ history[sid]=history[sid]||{}; if(!history[sid][ch]) history[sid][ch]=[]; return history[sid][ch]; }
 function findMsg(sid, ch, msgId){ const h=(history[sid]||{})[ch]; return h ? (h.find(m=>m.id===msgId)||null) : null; }
 function inviteCodeFor(sid){ let c=Object.keys(invites).find(x=>invites[x]===sid); if(!c){ c=newInvite(); invites[c]=sid; saveInvites(); } return c; }
@@ -349,7 +353,8 @@ const server = http.createServer((req, res) => {
       const c = clients.get(data.id); if (!c){ res.writeHead(401); return res.end(); }
       const h = (history[data.server]||{})[data.channel]; if (!h){ res.writeHead(400); return res.end(); }
       const i = h.findIndex(m=>m.id===data.msgId);
-      if (i<0 || key(h[i].user)!==key(c.user)){ res.writeHead(400); return res.end(); }
+      const s = servers[data.server];
+      if (i<0 || !(key(h[i].user)===key(c.user) || (s && hasPerm(s, c.user, 'manageMessages')))){ res.writeHead(400); return res.end(); }
       h.splice(i,1); saveHistory();
       broadcastToServer(data.server, { type:'message-delete', server:data.server, channel:data.channel, msgId:data.msgId });
       res.writeHead(200); res.end('ok');
@@ -400,7 +405,7 @@ const server = http.createServer((req, res) => {
       const s = servers[data.server];
       const fail = (m) => { res.writeHead(400, { 'Content-Type':'application/json' }); res.end(JSON.stringify({ error:m })); };
       if (!s) return fail('Sunucu yok');
-      if (key(s.owner)!==key(c.user)){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sadece sunucu sahibi kanallari duzenleyebilir' })); }
+      if (!hasPerm(s, c.user, 'manageChannels')){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Kanal yonetme yetkin yok' })); }
       const kind = data.kind==='voice' ? 'voice' : 'text';
       const list = kind==='voice' ? s.voice : s.text;
       const norm = x => String(x||'').trim().slice(0,40);
@@ -438,7 +443,7 @@ const server = http.createServer((req, res) => {
     return readJSON(req, (data) => {
       const c = clients.get(data.id); const s = servers[data.server];
       if (!c){ res.writeHead(401); return res.end(); }
-      if (!s || key(s.owner)!==key(c.user)){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sadece sunucu sahibi' })); }
+      if (!s || !hasPerm(s, c.user, 'manageServer')){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sunucu yonetme yetkin yok' })); }
       const name = String(data.name||'').trim().slice(0,40);
       if (name) s.name = name; saveServers();
       broadcastToServer(s.id, { type:'server-update', server: serverSummary(s) });
@@ -449,11 +454,77 @@ const server = http.createServer((req, res) => {
   // ---------- Sunucu ikonu (sahip) ----------
   if (p === '/api/server-icon' && req.method === 'POST'){
     const c = clients.get(req.headers['x-client-id']); const sid = req.headers['x-server']; const s = servers[sid];
-    if (!c || !s || key(s.owner)!==key(c.user)){ res.writeHead(403); return res.end(); }
+    if (!c || !s || !hasPerm(s, c.user, 'manageServer')){ res.writeHead(403); return res.end(); }
     return saveBinary(req, res, (file) => {
       s.icon = file.url; saveServers();
       broadcastToServer(sid, { type:'server-update', server: serverSummary(s) });
       res.writeHead(200); res.end(JSON.stringify({ url: file.url }));
+    });
+  }
+
+  // ---------- Rol yonetimi ----------
+  if (p === '/api/role' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id); const s = servers[data.server];
+      if (!c){ res.writeHead(401); return res.end(); }
+      if (!s || !hasPerm(s, c.user, 'manageRoles')){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Rol yonetme yetkin yok' })); }
+      srvRoles(s);
+      const cleanPerms = (pp) => { const o={}; ROLE_PERMS.forEach(k=>{ if(pp && pp[k]) o[k]=true; }); return o; };
+      if (data.action === 'create'){
+        const name = String(data.name||'').trim().slice(0,30) || 'yeni-rol';
+        const color = /^#[0-9a-f]{6}$/i.test(data.color||'') ? data.color : '#99aab5';
+        s.roles.push({ id:newId(), name, color, perms: cleanPerms(data.perms) });
+      } else if (data.action === 'edit'){
+        const r = s.roles.find(r=>r.id===data.roleId); if (!r){ res.writeHead(400); return res.end(); }
+        if (typeof data.name==='string') r.name = data.name.trim().slice(0,30) || r.name;
+        if (/^#[0-9a-f]{6}$/i.test(data.color||'')) r.color = data.color;
+        if (data.perms) r.perms = cleanPerms(data.perms);
+      } else if (data.action === 'delete'){
+        s.roles = s.roles.filter(r=>r.id!==data.roleId);
+        for (const u in s.memberRoles) s.memberRoles[u] = s.memberRoles[u].filter(id=>id!==data.roleId);
+      } else { res.writeHead(400); return res.end(); }
+      saveServers();
+      broadcastToServer(s.id, { type:'roles', server:s.id, roles:s.roles, memberRoles:s.memberRoles });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Uyeye rol ata / kaldir ----------
+  if (p === '/api/member-role' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id); const s = servers[data.server];
+      if (!c){ res.writeHead(401); return res.end(); }
+      if (!s || !hasPerm(s, c.user, 'manageRoles')){ res.writeHead(403); return res.end(); }
+      srvRoles(s);
+      const target = String(data.target||'').trim();
+      if (!s.members.some(m=>key(m)===key(target)) || !s.roles.some(r=>r.id===data.roleId)){ res.writeHead(400); return res.end(); }
+      const k = key(target); s.memberRoles[k] = s.memberRoles[k] || [];
+      if (data.op === 'add'){ if (!s.memberRoles[k].includes(data.roleId)) s.memberRoles[k].push(data.roleId); }
+      else { s.memberRoles[k] = s.memberRoles[k].filter(id=>id!==data.roleId); }
+      saveServers();
+      broadcastToServer(s.id, { type:'roles', server:s.id, roles:s.roles, memberRoles:s.memberRoles });
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Uye at (kick) ----------
+  if (p === '/api/kick' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id); const s = servers[data.server];
+      if (!c){ res.writeHead(401); return res.end(); }
+      if (!s || !hasPerm(s, c.user, 'kickMembers')){ res.writeHead(403, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Uye atma yetkin yok' })); }
+      const target = String(data.target||'').trim();
+      if (key(target)===key(s.owner)){ res.writeHead(400, { 'Content-Type':'application/json' }); return res.end(JSON.stringify({ error:'Sahip atilamaz' })); }
+      if (key(target)===key(c.user)){ res.writeHead(400); return res.end(); }
+      s.members = s.members.filter(m=>key(m)!==key(target));
+      srvRoles(s); delete s.memberRoles[key(target)];
+      saveServers();
+      sendToUser(target, { type:'server-deleted', server:s.id });
+      sendToUser(target, { type:'servers', servers: userServers(target).map(serverSummary) });
+      broadcastToServer(s.id, { type:'server-members', server:s.id, members:s.members });
+      broadcastToServer(s.id, { type:'roles', server:s.id, roles:s.roles, memberRoles:s.memberRoles });
+      broadcastPresence();
+      res.writeHead(200); res.end('ok');
     });
   }
 
