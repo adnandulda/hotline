@@ -12,8 +12,8 @@ const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-// >>> Kendi sunucu adresini buraya yaz (Railway adresi). Yerelde test icin localhost. <<<
-const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+// >>> Sunucu adresi (Railway). Yerelde test icin: APP_URL=http://localhost:3000 npm start <<<
+const APP_URL = process.env.APP_URL || 'https://hotline-production-03ae.up.railway.app/';
 
 let win = null, tray = null, quitting = false;
 
