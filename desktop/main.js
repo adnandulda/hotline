@@ -48,25 +48,32 @@ function createWindow(){
 // Cercevesiz pencerede ust kismi uygulamaya gom: surukleme alani + kendi pencere dugmeleri
 function injectChrome(){
   if (!win || win.isDestroyed()) return;
+  const H = 34;   // ust serit yuksekligi (px)
   const css = `
-    .topbar{-webkit-app-region:drag; padding-right:146px !important}
-    .topbar button,.topbar input,.topbar a,.topbar .title,.topbar [onclick]{-webkit-app-region:no-drag}
-    #winctl{position:fixed; top:0; right:0; height:34px; display:flex; z-index:2147483647; -webkit-app-region:no-drag;
-      font-family:Segoe UI,system-ui,sans-serif}
-    #winctl button{width:46px; height:34px; border:0; background:transparent; color:#cfd2da; font-size:15px; line-height:1;
-      cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .12s, color .12s}
-    #winctl button:hover{background:rgba(255,255,255,.10)}
-    #winctl button.wc-close:hover{background:#e81123; color:#fff}
-    #winctl svg{width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:1.2}
+    /* tum uygulamayi seridin altina it (cakisma biter) */
+    body{padding-top:${H}px !important; box-sizing:border-box !important}
+    #wintop{position:fixed; top:0; left:0; right:0; height:${H}px; -webkit-app-region:drag;
+      background:#0b0b0e; border-bottom:1px solid rgba(255,255,255,.06); display:flex; align-items:center;
+      z-index:2147483647; font-family:Segoe UI,system-ui,sans-serif; user-select:none}
+    #wintop .wt-title{padding-left:14px; font-size:12.5px; font-weight:600; color:#9aa0aa; letter-spacing:.3px; flex:1}
+    #wintop .wt-btns{display:flex; -webkit-app-region:no-drag}
+    #wintop .wt-btns button{width:46px; height:${H}px; border:0; background:transparent; color:#cfd2da; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; transition:background .12s, color .12s}
+    #wintop .wt-btns button:hover{background:rgba(255,255,255,.10)}
+    #wintop .wt-btns button.wc-close:hover{background:#e81123; color:#fff}
+    #wintop svg{width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:1.2}
   `;
   win.webContents.insertCSS(css).catch(()=>{});
   const js = `(function(){
-    if(document.getElementById('winctl')) return;
-    var bar=document.createElement('div'); bar.id='winctl';
+    if(document.getElementById('wintop')) return;
+    var bar=document.createElement('div'); bar.id='wintop';
     bar.innerHTML =
-      '<button class="wc-min" title="Kucult"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>'+
-      '<button class="wc-max" title="Buyut"><svg viewBox="0 0 12 12"><rect x="2.2" y="2.2" width="7.6" height="7.6"/></svg></button>'+
-      '<button class="wc-close" title="Kapat"><svg viewBox="0 0 12 12"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5"/></svg></button>';
+      '<div class="wt-title">Suicide Hotline</div>'+
+      '<div class="wt-btns">'+
+        '<button class="wc-min" title="Kucult"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>'+
+        '<button class="wc-max" title="Buyut"><svg viewBox="0 0 12 12"><rect x="2.2" y="2.2" width="7.6" height="7.6"/></svg></button>'+
+        '<button class="wc-close" title="Kapat"><svg viewBox="0 0 12 12"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5"/></svg></button>'+
+      '</div>';
     document.body.appendChild(bar);
     var api=window.desktopAPI||{};
     bar.querySelector('.wc-min').onclick=function(){ api.minimize&&api.minimize(); };
