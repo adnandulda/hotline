@@ -7,7 +7,7 @@
 //  Calistirmak:  cd desktop && npm install && npm start
 // =====================================================================
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -30,22 +30,51 @@ function createWindow(){
     backgroundColor: '#0b0b0e', title: 'Suicide Hotline',
     icon: iconImage(),
     autoHideMenuBar: true,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0c0c0f', symbolColor: '#7c6cff', height: 34 },
-    webPreferences: { contextIsolation: true }
+    frame: false,                       // Windows cercevesi tamamen kalksin
+    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.js') }
   });
   win.loadURL(APP_URL);
-  // Ust bar uygulamaya gomulsun: surukleme alani + pencere kontrollerine yer ac
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.insertCSS(
-      '.topbar{-webkit-app-region:drag; padding-right:150px}' +
-      '.topbar button,.topbar input,.topbar .title,.topbar [onclick]{-webkit-app-region:no-drag}'
-    ).catch(()=>{});
-  });
+  // Ust kisim uygulamanin devami olsun: surukleme alani + kendi pencere dugmelerimiz
+  win.webContents.on('did-finish-load', () => { injectChrome(); });
+  // buyut/eski-haline durumu degisince dugme ikonu guncellensin
+  win.on('maximize',   () => win.webContents.executeJavaScript("window.__setMax&&window.__setMax(true)").catch(()=>{}));
+  win.on('unmaximize', () => win.webContents.executeJavaScript("window.__setMax&&window.__setMax(false)").catch(()=>{}));
   // disari acilan linkler tarayicida acilsin
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   // kapatinca tepsiye in (tepsi varsa)
   win.on('close', (e) => { if (!quitting && tray){ e.preventDefault(); win.hide(); } });
+}
+
+// Cercevesiz pencerede ust kismi uygulamaya gom: surukleme alani + kendi pencere dugmeleri
+function injectChrome(){
+  if (!win || win.isDestroyed()) return;
+  const css = `
+    .topbar{-webkit-app-region:drag; padding-right:146px !important}
+    .topbar button,.topbar input,.topbar a,.topbar .title,.topbar [onclick]{-webkit-app-region:no-drag}
+    #winctl{position:fixed; top:0; right:0; height:34px; display:flex; z-index:2147483647; -webkit-app-region:no-drag;
+      font-family:Segoe UI,system-ui,sans-serif}
+    #winctl button{width:46px; height:34px; border:0; background:transparent; color:#cfd2da; font-size:15px; line-height:1;
+      cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .12s, color .12s}
+    #winctl button:hover{background:rgba(255,255,255,.10)}
+    #winctl button.wc-close:hover{background:#e81123; color:#fff}
+    #winctl svg{width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:1.2}
+  `;
+  win.webContents.insertCSS(css).catch(()=>{});
+  const js = `(function(){
+    if(document.getElementById('winctl')) return;
+    var bar=document.createElement('div'); bar.id='winctl';
+    bar.innerHTML =
+      '<button class="wc-min" title="Kucult"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>'+
+      '<button class="wc-max" title="Buyut"><svg viewBox="0 0 12 12"><rect x="2.2" y="2.2" width="7.6" height="7.6"/></svg></button>'+
+      '<button class="wc-close" title="Kapat"><svg viewBox="0 0 12 12"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5"/></svg></button>';
+    document.body.appendChild(bar);
+    var api=window.desktopAPI||{};
+    bar.querySelector('.wc-min').onclick=function(){ api.minimize&&api.minimize(); };
+    bar.querySelector('.wc-max').onclick=function(){ api.maximize&&api.maximize(); };
+    bar.querySelector('.wc-close').onclick=function(){ api.close&&api.close(); };
+    window.__setMax=function(m){ var b=bar.querySelector('.wc-max'); if(b) b.title=m?'Eski boyut':'Buyut'; };
+  })();`;
+  win.webContents.executeJavaScript(js).catch(()=>{});
 }
 
 function setupTray(){
@@ -60,6 +89,11 @@ function setupTray(){
     tray.on('click', () => { if (win){ win.isVisible() ? win.focus() : win.show(); } });
   }catch(e){ tray = null; }
 }
+
+// ---- Pencere kontrolleri (preload -> ipc) ----
+ipcMain.on('win-min',   () => { if (win) win.minimize(); });
+ipcMain.on('win-max',   () => { if (win){ win.isMaximized() ? win.unmaximize() : win.maximize(); } });
+ipcMain.on('win-close', () => { if (win) win.close(); });
 
 // ---- Tek surum kilidi ----
 if (!app.requestSingleInstanceLock()){ app.quit(); }
