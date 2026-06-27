@@ -76,23 +76,49 @@ const GAMES = {
   'wow.exe':'World of Warcraft', 'rainbowsix.exe':'Rainbow Six',
   'pubg.exe':'PUBG', 'tslgame.exe':'PUBG', 'forzahorizon5.exe':'Forza Horizon 5'
 };
-let lastGame = null;
-function listProcs(cb){
-  const cmd = process.platform === 'win32' ? 'tasklist /fo csv /nh' : 'ps -axco comm';
-  exec(cmd, { maxBuffer: 1024*1024*8, windowsHide: true }, (e, o) => cb(e ? '' : String(o).toLowerCase()));
+function parseCsvLine(line){
+  const m = line.match(/"((?:[^"]|"")*)"/g);
+  return m ? m.map(s => s.slice(1, -1).replace(/""/g, '"')) : [];
 }
+function detectGame(low){
+  for (const exe in GAMES){ if (low.includes(exe)) return { type:'playing', name:GAMES[exe] }; }
+  return null;
+}
+// Etkinligi bul: once oyun, yoksa Spotify (pencere basligindan calan sarki)
+function getActivity(cb){
+  if (process.platform !== 'win32'){
+    exec('ps -axco comm', { maxBuffer:1024*1024*8 }, (e,o)=> cb(e?null:detectGame(String(o).toLowerCase())));
+    return;
+  }
+  exec('tasklist /v /fo csv /nh', { maxBuffer:1024*1024*16, windowsHide:true }, (e,o)=>{
+    if (e){ cb(null); return; }
+    const text = String(o);
+    const g = detectGame(text.toLowerCase());
+    if (g){ cb(g); return; }
+    // Spotify: pencere basligi "Sanatci - Sarki" ise caliyor demektir
+    let song = null;
+    for (const line of text.split(/\r?\n/)){
+      const cols = parseCsvLine(line); if (!cols.length) continue;
+      if ((cols[0]||'').toLowerCase() === 'spotify.exe'){
+        const title = cols[cols.length-1] || '';
+        if (title && title !== 'N/A' && /\s-\s/.test(title) && !/^spotify( |$)/i.test(title)){ song = title; break; }
+      }
+    }
+    cb(song ? { type:'listening', name:song } : null);
+  });
+}
+let lastAct = '';
 function startGameDetection(){
-  const tick = () => listProcs(out => {
-    let found = null;
-    for (const exe in GAMES){ if (out.includes(exe)){ found = GAMES[exe]; break; } }
-    if (found !== lastGame){
-      lastGame = found;
-      const js = found
-        ? `window.appAutoActivity&&window.appAutoActivity('playing',${JSON.stringify(found)})`
+  const tick = () => getActivity(act => {
+    const k = act ? act.type+'|'+act.name : '';
+    if (k !== lastAct){
+      lastAct = k;
+      const js = act
+        ? `window.appAutoActivity&&window.appAutoActivity(${JSON.stringify(act.type)},${JSON.stringify(act.name)})`
         : `window.appAutoActivity&&window.appAutoActivity('','')`;
       if (win && !win.isDestroyed()) win.webContents.executeJavaScript(js).catch(()=>{});
     }
   });
-  setTimeout(tick, 5000);
-  setInterval(tick, 20000);
+  setTimeout(tick, 4000);
+  setInterval(tick, 12000);
 }
