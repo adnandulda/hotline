@@ -7,7 +7,7 @@
 //  Calistirmak:  cd desktop && npm install && npm start
 // =====================================================================
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, ipcMain, session, desktopCapturer } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -34,6 +34,8 @@ function createWindow(){
     webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.js') }
   });
   win.loadURL(APP_URL);
+  // Ekran paylasimi (getDisplayMedia) — Electron'da elle kaynak vermek gerekir
+  setupScreenShare();
   // Ust kisim uygulamanin devami olsun: surukleme alani + kendi pencere dugmelerimiz
   win.webContents.on('did-finish-load', () => { injectChrome(); });
   // buyut/eski-haline durumu degisince dugme ikonu guncellensin
@@ -43,6 +45,25 @@ function createWindow(){
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   // kapatinca tepsiye in (tepsi varsa)
   win.on('close', (e) => { if (!quitting && tray){ e.preventDefault(); win.hide(); } });
+}
+
+// Ekran paylasimi: getDisplayMedia cagrilinca kaynaklari topla, kullaniciya sectir, ver
+function setupScreenShare(){
+  if (!win || win.isDestroyed()) return;
+  try{
+    win.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types:['screen','window'], fetchWindowIcons:false,
+        thumbnailSize:{ width:320, height:180 } }).then(async (sources) => {
+        const list = sources.map(s => ({ id:s.id, name:s.name, thumb:s.thumbnail.toDataURL() }));
+        let chosen = null;
+        try{ chosen = await win.webContents.executeJavaScript(
+          'window.__pickSource && window.__pickSource('+JSON.stringify(list)+')', true); }catch(e){}
+        const src = chosen ? sources.find(s => s.id === chosen) : null;
+        if (src) callback({ video: src, audio: 'loopback' });   // sistem sesini de paylas (Windows)
+        else callback();   // iptal
+      }).catch(() => callback());
+    }, { useSystemPicker: false });
+  }catch(e){}
 }
 
 // Cercevesiz pencerede ust kismi uygulamaya gom: surukleme alani + kendi pencere dugmeleri
@@ -62,6 +83,22 @@ function injectChrome(){
     #wintop .wt-btns button:hover{background:rgba(255,255,255,.10)}
     #wintop .wt-btns button.wc-close:hover{background:#e81123; color:#fff}
     #wintop svg{width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:1.2}
+    /* ekran paylasimi kaynak secici */
+    #dspick{position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:2147483646; display:flex;
+      align-items:center; justify-content:center; font-family:Segoe UI,system-ui,sans-serif}
+    #dspick .ds-box{width:min(820px,92vw); max-height:84vh; background:#1c1d22; border:1px solid rgba(255,255,255,.08);
+      border-radius:14px; padding:18px; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.6)}
+    #dspick h3{margin:0 0 4px; color:#fff; font-size:18px}
+    #dspick .ds-sub{color:#9aa0aa; font-size:13px; margin-bottom:14px}
+    #dspick .ds-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px}
+    #dspick .ds-item{background:#26272d; border:2px solid transparent; border-radius:10px; padding:8px; cursor:pointer;
+      transition:border-color .12s, transform .12s}
+    #dspick .ds-item:hover{border-color:#7c6cff; transform:translateY(-2px)}
+    #dspick .ds-item img{width:100%; height:118px; object-fit:cover; border-radius:6px; background:#000; display:block}
+    #dspick .ds-item .ds-name{color:#dbdee1; font-size:12.5px; margin-top:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    #dspick .ds-foot{display:flex; justify-content:flex-end; margin-top:16px}
+    #dspick .ds-cancel{background:#3a3b42; color:#fff; border:0; padding:9px 18px; border-radius:8px; cursor:pointer; font-size:14px}
+    #dspick .ds-cancel:hover{background:#46474f}
   `;
   win.webContents.insertCSS(css).catch(()=>{});
   const js = `(function(){
@@ -80,6 +117,27 @@ function injectChrome(){
     bar.querySelector('.wc-max').onclick=function(){ api.maximize&&api.maximize(); };
     bar.querySelector('.wc-close').onclick=function(){ api.close&&api.close(); };
     window.__setMax=function(m){ var b=bar.querySelector('.wc-max'); if(b) b.title=m?'Eski boyut':'Buyut'; };
+
+    // Ekran paylasimi kaynak secici (main surec cagirir, secilen id'yi dondurur)
+    window.__pickSource=function(list){
+      return new Promise(function(resolve){
+        var old=document.getElementById('dspick'); if(old) old.remove();
+        var ov=document.createElement('div'); ov.id='dspick';
+        var items=(list||[]).map(function(s){
+          return '<div class="ds-item" data-id="'+s.id+'"><img src="'+s.thumb+'"><div class="ds-name">'+
+            (s.name||'').replace(/</g,'&lt;')+'</div></div>'; }).join('');
+        ov.innerHTML='<div class="ds-box"><h3>Neyi yayinlayacaksin?</h3>'+
+          '<div class="ds-sub">Bir ekran veya pencere sec.</div>'+
+          '<div class="ds-grid">'+(items||'<div style=\"color:#9aa0aa\">Kaynak bulunamadi.</div>')+'</div>'+
+          '<div class="ds-foot"><button class="ds-cancel">Iptal</button></div></div>';
+        document.body.appendChild(ov);
+        function done(v){ ov.remove(); resolve(v); }
+        ov.querySelectorAll('.ds-item').forEach(function(el){
+          el.onclick=function(){ done(el.getAttribute('data-id')); }; });
+        ov.querySelector('.ds-cancel').onclick=function(){ done(null); };
+        ov.onclick=function(e){ if(e.target===ov) done(null); };
+      });
+    };
   })();`;
   win.webContents.executeJavaScript(js).catch(()=>{});
 }
