@@ -18,6 +18,15 @@
     -webkit-tap-highlight-color:transparent}
   html,body{height:100%; overflow:hidden}
   body{background:var(--bg); color:var(--text)}
+  /* Modern ince kaydirma cubuklari (Discord tarzi) */
+  *{scrollbar-width:thin; scrollbar-color:#1a1b1e transparent}
+  ::-webkit-scrollbar{width:9px; height:9px}
+  ::-webkit-scrollbar-track{background:transparent; margin:4px 0}
+  ::-webkit-scrollbar-thumb{background:#1a1b1e; border-radius:8px; border:2px solid transparent; background-clip:content-box; min-height:36px}
+  ::-webkit-scrollbar-thumb:hover{background:#0f1011}
+  ::-webkit-scrollbar-corner{background:transparent}
+  .scroll, .messages, .members, .friends-view, .settings-content{overscroll-behavior:contain}
+  .messages{scroll-behavior:auto}
   .ava{border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center;
     font-weight:700; color:#fff; background-size:cover; background-position:center; flex-shrink:0; cursor:pointer}
 
