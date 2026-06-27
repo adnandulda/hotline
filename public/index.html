@@ -713,18 +713,21 @@
 <div class="settings-overlay" id="settings">
   <div class="settings-nav">
     <div class="inner">
-      <div class="settings-nav-title">Kullanici Ayarlari</div>
-      <div class="snav active" id="snav-account" onclick="settingsTab('account')">Hesabim</div>
-      <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
-      <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
-      <div class="snav" id="snav-voice" onclick="settingsTab('voice')">Ses & Video</div>
-      <div class="snav" id="snav-apps" onclick="settingsTab('apps')">Uygulamalar</div>
-      <div class="snav-sep"></div>
-      <div class="settings-nav-title">Sunucu</div>
-      <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
-      <div class="snav" id="snav-roles" onclick="settingsTab('roles')" style="display:none">Roller</div>
-      <div class="snav-sep"></div>
-      <div class="snav danger" onclick="logout()">Cikis Yap</div>
+      <div id="navUserGroup">
+        <div class="settings-nav-title">Kullanici Ayarlari</div>
+        <div class="snav active" id="snav-account" onclick="settingsTab('account')">Hesabim</div>
+        <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
+        <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
+        <div class="snav" id="snav-voice" onclick="settingsTab('voice')">Ses & Video</div>
+        <div class="snav" id="snav-apps" onclick="settingsTab('apps')">Uygulamalar</div>
+        <div class="snav-sep"></div>
+        <div class="snav danger" onclick="logout()">Cikis Yap</div>
+      </div>
+      <div id="navServerGroup" style="display:none">
+        <div class="settings-nav-title">Sunucu</div>
+        <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
+        <div class="snav" id="snav-roles" onclick="settingsTab('roles')" style="display:none">Roller</div>
+      </div>
     </div>
   </div>
   <div class="settings-content">
@@ -865,6 +868,13 @@
         kategori basligindaki <b>＋</b> ile ekle, kanalin uzerine gelince cikan
         <b>✎</b> / <b>🗑</b> ile duzenle.
       </p>
+      <div id="svDanger" class="acct-card" style="padding:16px; margin-top:18px; border:1px solid var(--red); background:rgba(218,55,60,.08); display:none">
+        <div class="label" style="color:#f0b6b8">Tehlikeli Bolge</div>
+        <p style="color:var(--muted); font-size:13px; margin:6px 0 12px">
+          Sunucuyu silmek kalicidir — tum kanallar, mesajlar ve davetler silinir, geri alinamaz.
+        </p>
+        <button class="btn danger" style="width:auto" onclick="deleteServerNow()">🗑 Sunucuyu Sil</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1021,6 +1031,8 @@ updateVoiceBtns();
 
 // ======== Kullanici Ayarlari ========
 function openSettings(){
+  $('navUserGroup').style.display='contents';
+  $('navServerGroup').style.display='none';
   settingsTab('account');
   $('settings').classList.add('open');
   applyRecBlink();
@@ -1036,6 +1048,16 @@ function openSettings(){
   }).catch(()=>{});
 }
 function closeSettings(){ $('settings').classList.remove('open'); stopTests(); }
+// ======== Sunucu Ayarlari (ust taraftan) ========
+function openServerSettings(){
+  if(!currentServer) return;
+  $('navUserGroup').style.display='none';
+  $('navServerGroup').style.display='contents';
+  settingsTab('server');
+  $('settings').classList.add('open');
+  applyRecBlink();
+  closeDrawers();
+}
 function settingsTab(name){
   ['account','profile','appearance','voice','apps','server','roles'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
@@ -1057,6 +1079,7 @@ function settingsTab(name){
     $('svName').disabled = !can;
     $('svOwnerNote').style.display = can ? 'none' : 'block';
     document.querySelectorAll('#sec-server .owner-edit').forEach(e=>e.style.display = can ? '' : 'none');
+    $('svDanger').style.display = amOwner() ? 'block' : 'none';
   }
   if(name==='roles') renderRolesTab();
 }
@@ -1415,7 +1438,15 @@ function applyServerHeader(){
   $('serverNameText').textContent = serverInfo.name || 'Sunucu';
   applyRecBlink();
 }
-function serverNameClick(){ if(currentServer){ openSettings(); settingsTab('server'); } }
+function serverNameClick(){ openServerSettings(); }
+function deleteServerNow(){
+  if(!currentServer || !amOwner()) return;
+  if(!confirm('"'+(serverInfo.name||'Bu sunucu')+'" kalici olarak silinecek. Emin misin?')) return;
+  fetch('/api/server-delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,server:currentServer})})
+    .then(r=>{ if(r.ok){ closeSettings(); toast('Sunucu silindi'); } else toast('Silinemedi (yalnizca sahip silebilir)'); })
+    .catch(()=>toast('Silinemedi'));
+}
 function applyChrome(){   // DM/ana sayfa modunda sunucuya ait seyleri gizle
   const home = !currentServer;
   $('members').style.display = home ? 'none' : '';
