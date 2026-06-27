@@ -278,7 +278,7 @@
   .ch-group, .po-label, .settings-nav-title, .acct-field .k, .flist-title, .label{
     letter-spacing:.6px; text-transform:uppercase; font-size:11px; color:var(--muted)}
   .server-name{letter-spacing:.3px; font-weight:600}
-  .channel.active{background:var(--hover); color:#fff; box-shadow:inset 2px 0 0 var(--accent)}
+  .channel.active{background:var(--hover); color:#fff}
   .channel.unread .cname{color:#fff}
   .rail-item.add{color:var(--accent)} .rail-item.add:hover{background:var(--accent); color:#fff}
   .modal,.popout,.acct-card{border:1px solid var(--border)}
@@ -474,7 +474,7 @@
   .server-name{background:rgba(255,255,255,.02)}
   .inputrow{background:rgba(255,255,255,.05); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border:1px solid var(--border)}
   .channel:hover, .member:hover, .dm-row:hover, .nav-btn:hover{background:rgba(255,255,255,.06)}
-  .channel.active{background:rgba(124,108,255,.18); box-shadow:inset 2px 0 0 var(--accent)}
+  .channel.active{background:rgba(124,108,255,.18)}
   .modal, .popout, .settings-overlay{background:rgba(20,20,26,.82); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px)}
   .settings-nav{background:rgba(14,14,18,.5)}
   .msg:hover{background:rgba(255,255,255,.03); border-radius:8px}
@@ -1490,7 +1490,7 @@ function renderChannels(){
         `<span class="vm-name" onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span><span class="vm-icons">${ic}</span></div>`;
     }).join('');
     return `<div class="channel ${c===currentVoiceRoom?'active':''}" data-ch="${esc(c)}" data-kind="voice" data-idx="${i}" onclick="joinVoice('${esc(c)}')">
-       <span class="cname">🔊 ${esc(c)}</span>${chToolsHTML('voice',i)}</div><div class="voice-members">${mems}</div>`;
+       <span class="cname">${esc(c)}</span>${chToolsHTML('voice',i)}</div><div class="voice-members">${mems}</div>`;
   }).join('');
 }
 // Katlanabilir kategoriler
