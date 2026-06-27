@@ -100,8 +100,9 @@
     align-items:flex-end}
   .settings-nav .inner{width:192px}
   .settings-nav-title{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; padding:6px 10px; letter-spacing:.4px}
-  .snav{padding:8px 10px; border-radius:5px; cursor:pointer; color:var(--muted); font-size:15px; margin-bottom:2px; font-weight:500}
-  .snav:hover{background:#393c41; color:var(--text)}
+  .snav{padding:8px 10px; border-radius:6px; cursor:pointer; color:var(--muted); font-size:15px; margin-bottom:2px; font-weight:500;
+    transition:background .15s ease, color .15s ease, transform .12s ease}
+  .snav:hover{background:#393c41; color:var(--text); transform:translateX(2px)}
   .snav.active{background:#3f4248; color:#fff}
   .snav.danger{color:var(--red)} .snav.danger:hover{background:var(--red); color:#fff}
   .snav-sep{height:1px; background:var(--border); margin:8px 10px}
@@ -110,7 +111,21 @@
     background:none; color:var(--muted); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center}
   .settings-close:hover{background:#3f4248; color:var(--text)}
   .settings-content h1{font-size:20px; margin-bottom:20px; font-weight:700}
-  .settings-section{display:none} .settings-section.active{display:block}
+  .settings-section{display:none} .settings-section.active{display:block; animation:secIn .26s cubic-bezier(.2,.7,.3,1)}
+  @keyframes secIn{from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none}}
+  .settings-overlay.open{animation:setFade .2s ease}
+  @keyframes setFade{from{opacity:0} to{opacity:1}}
+  .settings-close{transition:background .15s ease, color .15s ease, transform .2s ease}
+  .settings-close:hover{transform:rotate(90deg)}
+  /* Uygulamalar */
+  .app-conn{display:flex; align-items:center; gap:14px; background:var(--bg3); border:1px solid var(--border);
+    border-radius:12px; padding:14px 16px; transition:border-color .2s ease, transform .15s ease}
+  .app-conn:hover{border-color:var(--accent); transform:translateY(-1px)}
+  .app-ic{width:46px; height:46px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0}
+  .app-info{flex:1; min-width:0}
+  .app-name{font-weight:700; font-size:15px}
+  .app-state{font-size:13px; color:var(--muted); margin-top:2px; transition:color .2s ease}
+  .app-conn .btn{width:auto; padding:9px 18px; font-size:14px}
   .acct-card{background:var(--bg3); border-radius:8px; overflow:hidden}
   .acct-banner{height:90px; background:linear-gradient(135deg,var(--accent),#3641a8)}
   .acct-head{display:flex; align-items:center; gap:14px; padding:0 16px 16px; margin-top:-30px}
@@ -580,19 +595,6 @@
         <div class="sm-sep"></div>
         <input id="customStatusInput" class="sm-input" placeholder="Ozel durum yaz..." maxlength="80" onkeydown="if(event.key==='Enter')saveCustomStatus()">
         <div class="sm-opt sm-save" onclick="saveCustomStatus()">💬 Ozel durumu kaydet</div>
-        <div class="sm-sep"></div>
-        <select id="activityType" class="sm-input">
-          <option value="">Etkinlik yok</option>
-          <option value="playing">🎮 Oynuyor</option>
-          <option value="listening">🎧 Dinliyor</option>
-          <option value="watching">📺 Izliyor</option>
-          <option value="streaming">🔴 Yayinda</option>
-          <option value="competing">🏆 Yarisiyor</option>
-        </select>
-        <input id="activityName" class="sm-input" placeholder="Ne? (orn. Valorant)" maxlength="80" onkeydown="if(event.key==='Enter')saveActivity()">
-        <div class="sm-opt sm-save" onclick="saveActivity()">🎯 Etkinligi kaydet</div>
-        <div class="sm-sep"></div>
-        <div class="sm-opt sm-save" id="spBtn" onclick="connectSpotify()">🎧 Spotify bagla</div>
       </div>
 
       <div class="me-bar">
@@ -716,6 +718,7 @@
       <div class="snav" id="snav-profile" onclick="settingsTab('profile')">Profil</div>
       <div class="snav" id="snav-appearance" onclick="settingsTab('appearance')">Gorunum</div>
       <div class="snav" id="snav-voice" onclick="settingsTab('voice')">Ses & Video</div>
+      <div class="snav" id="snav-apps" onclick="settingsTab('apps')">Uygulamalar</div>
       <div class="snav-sep"></div>
       <div class="settings-nav-title">Sunucu</div>
       <div class="snav" id="snav-server" onclick="settingsTab('server')">Sunucu Ayarlari</div>
@@ -801,6 +804,20 @@
     </div>
 
     <!-- Sunucu Ayarlari -->
+    <!-- Uygulamalar -->
+    <div class="settings-section" id="sec-apps">
+      <h1>Uygulamalar</h1>
+      <div class="app-conn">
+        <div class="app-ic" style="background:#1db95422; color:#1db954">🎧</div>
+        <div class="app-info"><div class="app-name">Spotify</div><div class="app-state" id="spState">Bagli degil</div></div>
+        <button class="btn" id="spConnectBtn" onclick="connectSpotify()">Bagla</button>
+      </div>
+      <p style="color:var(--muted); font-size:13px; margin-top:12px">
+        Spotify'i baglayinca calan sarki (kapak + ilerleme) otomatik profilinde gorunur.
+        Oyunlar masaustu uygulamasinda otomatik algilanir.
+      </p>
+    </div>
+
     <!-- Roller -->
     <div class="settings-section" id="sec-roles">
       <h1>Roller</h1>
@@ -1020,7 +1037,7 @@ function openSettings(){
 }
 function closeSettings(){ $('settings').classList.remove('open'); stopTests(); }
 function settingsTab(name){
-  ['account','profile','appearance','voice','server','roles'].forEach(n=>{
+  ['account','profile','appearance','voice','apps','server','roles'].forEach(n=>{
     $('sec-'+n).classList.toggle('active', n===name);
     const nav=$('snav-'+n); if(nav) nav.classList.toggle('active', n===name);
   });
@@ -1030,6 +1047,7 @@ function settingsTab(name){
     $('pttKeyLabel').textContent = keyName(pttKey);
     populateDevices();
   } else stopTests();
+  if(name==='apps') updateSpotifyBtn();
   if(name==='server'){
     $('svName').value = serverInfo.name || '';
     const a=$('svIcon');
@@ -1255,12 +1273,7 @@ function updateMyStatus(){
 }
 function toggleStatusMenu(){
   const sm=$('statusMenu'); const open=sm.classList.toggle('show');
-  if(open){ $('customStatusInput').value=myCustomStatus||''; $('activityType').value=myActivityType||''; $('activityName').value=myActivityName||''; updateSpotifyBtn(); }
-}
-function saveActivity(){
-  myActivityType=$('activityType').value; myActivityName=$('activityName').value.trim();
-  updateMyStatus(); $('statusMenu').classList.remove('show');
-  fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,activityType:myActivityType,activityName:myActivityName})});
+  if(open){ $('customStatusInput').value=myCustomStatus||''; }
 }
 // Masaustu (Electron) otomatik oyun algilamasi buradan etkinligi ayarlar
 window.appAutoActivity=function(type,name){
@@ -1293,7 +1306,7 @@ async function spotifyHandleRedirect(){
   try{
     const body=new URLSearchParams({ client_id:SPOTIFY_CLIENT_ID, grant_type:'authorization_code', code, redirect_uri:spRedirect(), code_verifier:v });
     const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-    const d=await r.json(); if(d.access_token){ saveSpTokens(d); toast('🎧 Spotify baglandi'); }
+    const d=await r.json(); if(d.access_token){ saveSpTokens(d); toast('🎧 Spotify baglandi'); startSpotifyPoll(); updateSpotifyBtn(); }
   }catch(e){}
   localStorage.removeItem('sp_verifier');
 }
@@ -1326,7 +1339,11 @@ async function pollSpotify(){
 }
 function sendSpotify(data){ if(token) fetch('/api/spotify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,data})}).catch(()=>{}); }
 function disconnectSpotify(){ stopSpotifyPoll(); ['sp_access','sp_exp','sp_refresh'].forEach(k=>localStorage.removeItem(k)); sendSpotify(null); toast('Spotify baglantisi kesildi'); updateSpotifyBtn(); }
-function updateSpotifyBtn(){ const b=$('spBtn'); if(b){ b.textContent = spotifyConnected()?'🎧 Spotify baglantisini kes':'🎧 Spotify bagla'; b.onclick = spotifyConnected()?disconnectSpotify:connectSpotify; } }
+function updateSpotifyBtn(){
+  const b=$('spConnectBtn'), s=$('spState'); if(!b||!s) return;
+  if(spotifyConnected()){ s.textContent='✓ Baglandi'; s.style.color='var(--green)'; b.textContent='Baglantiyi kes'; b.className='btn sec'; b.onclick=disconnectSpotify; }
+  else { s.textContent='Bagli degil'; s.style.color='var(--muted)'; b.textContent='Bagla'; b.className='btn'; b.onclick=connectSpotify; }
+}
 spotifyHandleRedirect();
 function setStatus(s){
   myStatus=s; updateMyStatus(); $('statusMenu').classList.remove('show');
