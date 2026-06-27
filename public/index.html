@@ -390,6 +390,16 @@
   .member .mcol .mname{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .member .msub{font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .po-activity{font-size:13px; color:var(--text); margin-top:8px; background:#2b2d31; border-radius:6px; padding:7px 10px; font-weight:600}
+  .po-spotify{display:flex; gap:10px; margin-top:8px; background:#13231a; border:1px solid rgba(29,185,84,.4); border-radius:8px; padding:10px; text-decoration:none; color:var(--text)}
+  .po-spotify:hover{border-color:#1db954; box-shadow:0 0 12px rgba(29,185,84,.25)}
+  .po-spotify img{width:60px; height:60px; border-radius:4px; object-fit:cover; flex-shrink:0; background:#000}
+  .po-spotify .sp-info{flex:1; min-width:0}
+  .po-spotify .sp-head{font-size:10px; color:#1db954; font-weight:700; font-family:var(--mono); letter-spacing:1px}
+  .po-spotify .sp-title{font-weight:700; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .po-spotify .sp-artist{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .po-spotify .sp-bar{height:4px; background:rgba(255,255,255,.15); border-radius:2px; margin-top:7px; overflow:hidden}
+  .po-spotify .sp-bar i{display:block; height:100%; background:#1db954; width:0%}
+  .po-spotify .sp-time{display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-family:var(--mono); margin-top:3px}
 
   /* Arkadaslar gorunumu */
   .friends-view{flex:1; overflow-y:auto; padding:18px; display:none}
@@ -567,6 +577,8 @@
         </select>
         <input id="activityName" class="sm-input" placeholder="Ne? (orn. Valorant)" maxlength="80" onkeydown="if(event.key==='Enter')saveActivity()">
         <div class="sm-opt sm-save" onclick="saveActivity()">🎯 Etkinligi kaydet</div>
+        <div class="sm-sep"></div>
+        <div class="sm-opt sm-save" id="spBtn" onclick="connectSpotify()">🎧 Spotify bagla</div>
       </div>
 
       <div class="me-bar">
@@ -870,6 +882,16 @@
       <div class="po-handle" id="poHandle"></div>
       <div class="po-customstatus" id="poStatus"></div>
       <div class="po-activity" id="poActivity"></div>
+      <a class="po-spotify" id="poSpotify" target="_blank" rel="noopener" style="display:none">
+        <img id="poSpArt" alt="">
+        <div class="sp-info">
+          <div class="sp-head">🎧 SPOTIFY</div>
+          <div class="sp-title" id="poSpTitle"></div>
+          <div class="sp-artist" id="poSpArtist"></div>
+          <div class="sp-bar"><i id="poSpBar"></i></div>
+          <div class="sp-time"><span id="poSpCur">0:00</span><span id="poSpDur">0:00</span></div>
+        </div>
+      </a>
       <div class="po-section" id="poBioWrap"><div class="po-label">Hakkinda</div><div class="po-bio" id="poBio"></div></div>
       <div class="po-section" id="poMemberWrap"><div class="po-label">Uye Olma Tarihi</div><div class="po-member" id="poMember"></div></div>
       <div class="po-section" id="poRolesWrap"><div class="po-label">Roller</div><div id="poRoles" style="display:flex;flex-wrap:wrap;gap:5px"></div></div>
@@ -1023,6 +1045,7 @@ function startSession(t, name){
   $('meName').textContent = username;
   ensureNotifPerm();
   connect();
+  setTimeout(startSpotifyPoll, 1500);   // Spotify bagliysa calan sarkiyi cek
 }
 async function doLogin(){
   const email=$('loginEmail').value.trim(), password=$('loginPass').value;
@@ -1215,7 +1238,7 @@ function updateMyStatus(){
 }
 function toggleStatusMenu(){
   const sm=$('statusMenu'); const open=sm.classList.toggle('show');
-  if(open){ $('customStatusInput').value=myCustomStatus||''; $('activityType').value=myActivityType||''; $('activityName').value=myActivityName||''; }
+  if(open){ $('customStatusInput').value=myCustomStatus||''; $('activityType').value=myActivityType||''; $('activityName').value=myActivityName||''; updateSpotifyBtn(); }
 }
 function saveActivity(){
   myActivityType=$('activityType').value; myActivityName=$('activityName').value.trim();
@@ -1227,6 +1250,67 @@ window.appAutoActivity=function(type,name){
   myActivityType=type||''; myActivityName=name||''; updateMyStatus();
   if(token) fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,activityType:myActivityType,activityName:myActivityName})}).catch(()=>{});
 };
+
+// ======== Spotify entegrasyonu (Web API, PKCE) ========
+const SPOTIFY_CLIENT_ID = '';   // <<< Spotify Developer App Client ID'sini buraya yaz
+const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state';
+function spRedirect(){ return location.origin + '/'; }
+function b64url(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function spotifyConnected(){ return !!localStorage.getItem('sp_refresh'); }
+async function connectSpotify(){
+  if(!SPOTIFY_CLIENT_ID){ toast('Spotify Client ID ayarli degil (gelistiriciye soyle)'); return; }
+  const v=b64url(crypto.getRandomValues(new Uint8Array(48))); localStorage.setItem('sp_verifier', v);
+  const ch=b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+  const p=new URLSearchParams({ client_id:SPOTIFY_CLIENT_ID, response_type:'code', redirect_uri:spRedirect(),
+    code_challenge_method:'S256', code_challenge:ch, scope:SPOTIFY_SCOPES });
+  location.href='https://accounts.spotify.com/authorize?'+p.toString();
+}
+function saveSpTokens(d){
+  if(d.access_token){ localStorage.setItem('sp_access', d.access_token); localStorage.setItem('sp_exp', Date.now()+((d.expires_in||3600)-60)*1000); }
+  if(d.refresh_token) localStorage.setItem('sp_refresh', d.refresh_token);
+}
+async function spotifyHandleRedirect(){
+  const u=new URL(location.href); const code=u.searchParams.get('code'); const v=localStorage.getItem('sp_verifier');
+  if(!code || !v) return;
+  history.replaceState({},'',location.pathname);
+  try{
+    const body=new URLSearchParams({ client_id:SPOTIFY_CLIENT_ID, grant_type:'authorization_code', code, redirect_uri:spRedirect(), code_verifier:v });
+    const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json(); if(d.access_token){ saveSpTokens(d); toast('🎧 Spotify baglandi'); }
+  }catch(e){}
+  localStorage.removeItem('sp_verifier');
+}
+async function spToken(){
+  const acc=localStorage.getItem('sp_access'), exp=+localStorage.getItem('sp_exp')||0;
+  if(acc && Date.now()<exp) return acc;
+  const rt=localStorage.getItem('sp_refresh'); if(!rt) return null;
+  try{
+    const body=new URLSearchParams({ client_id:SPOTIFY_CLIENT_ID, grant_type:'refresh_token', refresh_token:rt });
+    const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json(); saveSpTokens(d); return d.access_token||null;
+  }catch(e){ return null; }
+}
+let spPollTimer=null, spActive=false;
+function startSpotifyPoll(){ if(spPollTimer||!spotifyConnected()) return; pollSpotify(); spPollTimer=setInterval(pollSpotify, 10000); }
+function stopSpotifyPoll(){ if(spPollTimer){ clearInterval(spPollTimer); spPollTimer=null; } }
+async function pollSpotify(){
+  if(!token) return;
+  const acc=await spToken(); if(!acc) return;
+  try{
+    const r=await fetch('https://api.spotify.com/v1/me/player/currently-playing',{headers:{Authorization:'Bearer '+acc}});
+    if(r.status===204 || r.status>=400){ if(spActive){ spActive=false; sendSpotify(null); } return; }
+    const d=await r.json();
+    if(!d || !d.item || !d.is_playing){ if(spActive){ spActive=false; sendSpotify(null); } return; }
+    spActive=true;
+    sendSpotify({ track:d.item.name, artist:(d.item.artists||[]).map(a=>a.name).join(', '),
+      art:(d.item.album&&d.item.album.images&&d.item.album.images[0])?d.item.album.images[0].url:null,
+      url:d.item.external_urls?d.item.external_urls.spotify:null, duration:d.item.duration_ms, progress:d.progress_ms });
+  }catch(e){}
+}
+function sendSpotify(data){ if(token) fetch('/api/spotify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,data})}).catch(()=>{}); }
+function disconnectSpotify(){ stopSpotifyPoll(); ['sp_access','sp_exp','sp_refresh'].forEach(k=>localStorage.removeItem(k)); sendSpotify(null); toast('Spotify baglantisi kesildi'); updateSpotifyBtn(); }
+function updateSpotifyBtn(){ const b=$('spBtn'); if(b){ b.textContent = spotifyConnected()?'🎧 Spotify baglantisini kes':'🎧 Spotify bagla'; b.onclick = spotifyConnected()?disconnectSpotify:connectSpotify; } }
+spotifyHandleRedirect();
 function setStatus(s){
   myStatus=s; updateMyStatus(); $('statusMenu').classList.remove('show');
   fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,status:s})});
@@ -1892,7 +1976,7 @@ function uploadFile(){
 function onlineInfo(user){ return onlineUsers.find(o=>o.user.toLowerCase()===user.toLowerCase()) || null; }
 function renderMembers(){
   const memberNames = (serverInfo.members || []);
-  const list = memberNames.map(u=>{ const o=onlineInfo(u); return { user:u, online:!!o, status:o?o.status:'offline', customStatus:o?o.customStatus:'', activityType:o?o.activityType:'', activityName:o?o.activityName:'' }; });
+  const list = memberNames.map(u=>{ const o=onlineInfo(u); return { user:u, online:!!o, status:o?o.status:'offline', customStatus:o?o.customStatus:'', activityType:o?o.activityType:'', activityName:o?o.activityName:'', spotify:o?o.spotify:null }; });
   const on = list.filter(x=>x.online), off = list.filter(x=>!x.online);
   $('onlineCount').textContent = on.length;
   const row = (u)=>{
@@ -1900,7 +1984,7 @@ function renderMembers(){
     const si = statusInfo(u.status, u.online);
     const col = roleColorOf(u.user);
     const nameStyle = col ? ` style="color:${col}"` : '';
-    const sub = activityText(u.activityType,u.activityName) || u.customStatus || '';
+    const sub = (u.spotify&&u.spotify.track ? '🎧 '+u.spotify.track+' — '+u.spotify.artist : '') || activityText(u.activityType,u.activityName) || u.customStatus || '';
     const subHtml = (u.online && sub) ? `<div class="msub">${esc(sub)}</div>` : '';
     return `<div class="member ${u.online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,32)}`+
     `<div class="mcol"><span class="mname"${nameStyle}>${esc(u.user)}${crown}</span>${subHtml}</div><span class="dot" style="background:${si.color}"></span></div>`;
@@ -1913,8 +1997,26 @@ function renderMembers(){
 // ======== Profil pop-out (tiklanan yerin yaninda) ========
 let lastClickX=window.innerWidth/2, lastClickY=window.innerHeight/2;
 document.addEventListener('mousedown', e=>{ lastClickX=e.clientX; lastClickY=e.clientY; }, true);
-function closePopout(){ $('userPopout').style.display='none'; }
+function closePopout(){ $('userPopout').style.display='none'; stopPoSpotify(); }
 function saveNote(){ const u=$('poNote').dataset.user; if(u) localStorage.setItem('note:'+u.toLowerCase(), $('poNote').value); }
+// --- Spotify karti (pop-out) ---
+let poSpTimer=null;
+function fmtMs(ms){ ms=Math.max(0,ms|0); const s=Math.floor(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function showPoSpotify(sp){
+  stopPoSpotify();
+  const el=$('poSpotify'); el.style.display='flex'; el.href=sp.url||'#';
+  $('poSpArt').src=sp.art||''; $('poSpArt').style.display=sp.art?'block':'none';
+  $('poSpTitle').textContent=sp.track||''; $('poSpArtist').textContent=sp.artist||'';
+  $('poSpDur').textContent=fmtMs(sp.duration||0);
+  const update=()=>{
+    let cur = (sp.progress||0) + (Date.now() - (sp.ts||Date.now()));
+    if(sp.duration) cur=Math.min(cur, sp.duration);
+    $('poSpBar').style.width = sp.duration ? (cur/sp.duration*100)+'%' : '0%';
+    $('poSpCur').textContent = fmtMs(cur);
+  };
+  update(); poSpTimer=setInterval(update, 1000);
+}
+function stopPoSpotify(){ if(poSpTimer){ clearInterval(poSpTimer); poSpTimer=null; } const el=$('poSpotify'); if(el) el.style.display='none'; }
 function positionPopout(el, x, y){
   el.style.display='block';
   const w=el.offsetWidth||300, h=el.offsetHeight||320;
@@ -1948,10 +2050,16 @@ function openProfile(user){
     // ozel durum
     $('poStatus').textContent = p.customStatus || '';
     $('poStatus').style.display = p.customStatus ? 'block' : 'none';
-    // etkinlik (oynuyor/dinliyor...)
-    const actTxt = activityText(p.activityType, p.activityName);
-    $('poActivity').textContent = actTxt;
-    $('poActivity').style.display = actTxt ? 'block' : 'none';
+    // Spotify (zengin) ya da normal etkinlik
+    if(p.spotify && p.spotify.track){
+      showPoSpotify(p.spotify);
+      $('poActivity').style.display='none';
+    } else {
+      stopPoSpotify();
+      const actTxt = activityText(p.activityType, p.activityName);
+      $('poActivity').textContent = actTxt;
+      $('poActivity').style.display = actTxt ? 'block' : 'none';
+    }
     // hakkinda
     if(p.bio){ $('poBioWrap').style.display='block'; $('poBio').textContent=p.bio; } else $('poBioWrap').style.display='none';
     // uye olma tarihi

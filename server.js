@@ -51,11 +51,13 @@ function createSession(username){ const token=crypto.randomBytes(24).toString('h
 function userFromToken(token){ return token && sessions[token] ? sessions[token] : null; }
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 
+const spotifyNow = {};   // username(lower) -> { track, artist, art, url, duration, progress, ts }  (bellekte, kalici degil)
 function getProfile(user){
   const p = profiles[key(user)] || {};
   return { user, avatar: p.avatar || null, bio: p.bio || '', status: p.status || 'online', customStatus: p.customStatus || '',
     banner: p.banner || null, bannerColor: p.bannerColor || '',
-    activityType: p.activityType || '', activityName: p.activityName || '' };
+    activityType: p.activityType || '', activityName: p.activityName || '',
+    spotify: spotifyNow[key(user)] || null };
 }
 function getFriendData(user){ if (!friends[key(user)]) friends[key(user)] = { friends: [], requests: [] }; return friends[key(user)]; }
 function dmKey(a, b){ return [key(a), key(b)].sort().join('|'); }
@@ -105,7 +107,7 @@ function onlineUsers(){   // gorunmez olanlar haric, tekil
     const pr=getProfile(c.user);
     if (pr.status==='invisible') continue;
     arr.push({ user:c.user, avatar:pr.avatar, status:pr.status, customStatus:pr.customStatus,
-      activityType:pr.activityType, activityName:pr.activityName });
+      activityType:pr.activityType, activityName:pr.activityName, spotify:pr.spotify });
   }
   return arr;
 }
@@ -230,6 +232,8 @@ const server = http.createServer((req, res) => {
     const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch(e){} }, 25000);
     req.on('close', () => {
       clearInterval(ping); clients.delete(clientId); delete voiceState[clientId];
+      // bu kullanicinin baska bagli cihazi yoksa Spotify durumunu temizle
+      if (![...clients.values()].some(x=>key(x.user)===key(user))) delete spotifyNow[key(user)];
       for (const sid in voiceMembers){ for (const room in voiceMembers[sid]){
         if (voiceMembers[sid][room].delete(clientId)) broadcastToServer(sid, { type:'voice-leave', server:sid, room, id:clientId });
       } }
@@ -637,6 +641,26 @@ const server = http.createServer((req, res) => {
       if (typeof data.activityType === 'string' && ['','playing','listening','watching','streaming','competing'].includes(data.activityType)) profiles[k].activityType = data.activityType;
       if (typeof data.activityName === 'string') profiles[k].activityName = data.activityName.slice(0, 80);
       saveJSON(PROFILES_FILE, profiles);
+      broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
+      broadcastPresence();
+      res.writeHead(200); res.end('ok');
+    });
+  }
+
+  // ---------- Spotify "su an caliyor" (zengin) ----------
+  if (p === '/api/spotify' && req.method === 'POST'){
+    return readJSON(req, (data) => {
+      const c = clients.get(data.id); if (!c){ res.writeHead(401); return res.end(); }
+      const k = key(c.user);
+      const d = data.data;
+      if (d && d.track){
+        spotifyNow[k] = {
+          track: String(d.track).slice(0,150), artist: String(d.artist||'').slice(0,150),
+          art: typeof d.art==='string' ? d.art.slice(0,300) : null,
+          url: typeof d.url==='string' ? d.url.slice(0,300) : null,
+          duration: +d.duration||0, progress: +d.progress||0, ts: Date.now()
+        };
+      } else { delete spotifyNow[k]; }
       broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
       broadcastPresence();
       res.writeHead(200); res.end('ok');
