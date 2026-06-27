@@ -1,5 +1,5 @@
 // =====================================================================
-//  BIZIM DISCORD - Sunucu (server.js)  — COKLU SUNUCU (Discord mantigi)
+//  SUICIDE HOTLINE - Sunucu (server.js)  — COKLU SUNUCU (Discord mantigi)
 //  Sifir bagimlilik: sadece Node.js'in kendi modulleri kullanilir.
 //  Calistirmak icin:  node server.js   ->  http://localhost:3000
 // =====================================================================
@@ -752,7 +752,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('===================================================');
-  console.log('  BIZIM DISCORD calisiyor! 🎉  (coklu sunucu)');
+  console.log('  SUICIDE HOTLINE calisiyor! 🎉  (coklu sunucu)');
   console.log('  Bu bilgisayardan:   http://localhost:' + PORT);
   console.log('  Ayni wifi-deki telefon/PC:  http://<BU-BILGISAYARIN-IP>:' + PORT);
   console.log('  Durdurmak icin:  Ctrl + C');

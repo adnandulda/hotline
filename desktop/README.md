@@ -1,4 +1,4 @@
-# 🖥️ Bizim Discord — Masaüstü Uygulaması (Electron)
+# 🖥️ Suicide Hotline — Masaüstü Uygulaması (Electron)
 
 Web uygulamasını bir masaüstü penceresinde açar ve şunları ekler:
 - **Sistem tepsisi** — pencereyi kapatınca tepsiye iner, arka planda çalışmaya devam eder.

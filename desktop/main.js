@@ -1,5 +1,5 @@
 // =====================================================================
-//  Bizim Discord - Masaustu (Electron)
+//  Suicide Hotline - Masaustu (Electron)
 //  Web uygulamasini bir masaustu penceresinde acar + ekstra ozellikler:
 //   - sistem tepsisi (kapatinca tepsiye iner)
 //   - native masaustu bildirimleri (web app zaten Notification kullaniyor)
@@ -27,7 +27,7 @@ function iconImage(){
 function createWindow(){
   win = new BrowserWindow({
     width: 1200, height: 800, minWidth: 760, minHeight: 480,
-    backgroundColor: '#313338', title: 'Bizim Discord',
+    backgroundColor: '#313338', title: 'Suicide Hotline',
     icon: iconImage(),
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true }
@@ -42,7 +42,7 @@ function createWindow(){
 function setupTray(){
   try{
     tray = new Tray(iconImage());
-    tray.setToolTip('Bizim Discord');
+    tray.setToolTip('Suicide Hotline');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Goster', click: () => { if (win){ win.show(); win.focus(); } } },
       { type: 'separator' },

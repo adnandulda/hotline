@@ -1,4 +1,4 @@
-# 🎮 Bizim Discord — Nasıl Çalıştırılır?
+# 🎮 Suicide Hotline — Nasıl Çalıştırılır?
 
 Bu, **sıfırdan kendimiz kodladığımız** kendi sohbet uygulamamız. İçinde:
 
@@ -29,7 +29,7 @@ Bilgisayarına Node.js kurman lazım (uygulamayı çalıştıran motor):
 
 ### Windows (en kolay):
 - Klasördeki **`BASLAT.bat`** dosyasına **çift tıkla.**
-- Siyah bir pencere açılır ve "BIZIM DISCORD calisiyor!" yazar. Hazır!
+- Siyah bir pencere açılır ve "SUICIDE HOTLINE calisiyor!" yazar. Hazır!
 
 ### Mac / Linux:
 - Klasörde bir terminal aç ve şunu yaz:

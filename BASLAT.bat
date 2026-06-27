@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 >nul
-title Bizim Discord Sunucusu
+title Suicide Hotline Sunucusu
 echo ===================================================
-echo            BIZIM DISCORD baslatiliyor...
+echo            SUICIDE HOTLINE baslatiliyor...
 echo ===================================================
 echo.
 
