@@ -234,6 +234,11 @@
     background:var(--bg2); color:var(--text); outline:none; font-size:14px}
   .mic-meter{flex:1; min-width:120px; height:12px; background:var(--bg3); border-radius:6px; overflow:hidden}
   .mic-meter #micLevel{height:100%; width:0%; background:var(--green); transition:width .05s linear}
+  .sens-meter{position:relative; height:14px; background:var(--bg3); border-radius:7px; overflow:hidden; margin-bottom:10px}
+  .sens-meter #sensLevel{height:100%; width:0%; background:var(--green); transition:width .06s linear}
+  .sens-meter #sensMark{position:absolute; top:-2px; bottom:-2px; width:3px; background:#fff; border-radius:2px;
+    box-shadow:0 0 4px rgba(0,0,0,.6); left:30%}
+  .sens-range{width:100%; accent-color:var(--accent); cursor:pointer}
   .switch{position:relative; width:46px; height:26px; flex-shrink:0}
   .switch input{opacity:0; width:0; height:0}
   .switch .track{position:absolute; inset:0; background:#4e5058; border-radius:26px; transition:.2s; cursor:pointer}
@@ -809,6 +814,15 @@
       <button class="btn sec" style="width:auto" onclick="toggleCamTest()">📷 Kamera Testi</button>
       <video id="camTest" autoplay playsinline muted style="display:none; width:100%; max-width:340px; border-radius:8px; background:#000; margin-top:8px; transform:scaleX(-1)"></video>
       <div class="snav-sep" style="margin:16px 0"></div>
+      <div class="label">Mikrofon Hassasiyeti</div>
+      <p style="color:var(--muted); font-size:13px; margin:2px 0 8px">
+        Cizginin <b>solu</b> esik. Bar cizgiyi gectiginde yesil yanarsin.
+        Saga kaydir = daha hassas (kisik sese de yanar), sola = daha az hassas.
+      </p>
+      <div class="sens-meter"><div id="sensLevel"></div><div id="sensMark"></div></div>
+      <input type="range" id="sensSlider" min="0" max="100" value="70" class="sens-range"
+        oninput="setMicSensitivity(this.value)">
+      <div class="snav-sep" style="margin:16px 0"></div>
       <div class="setting-row">
         <span>🎙️ Bas-konus (PTT) — sadece tusa basiliyken mikrofon acik</span>
         <label class="switch"><input type="checkbox" id="pttToggle" onchange="togglePTT()"><span class="track"></span></label>
@@ -1069,7 +1083,7 @@ function openSettings(){
     if(d && d.email) $('stEmail').textContent=d.email;
   }).catch(()=>{});
 }
-function closeSettings(){ $('settings').classList.remove('open'); stopTests(); }
+function closeSettings(){ $('settings').classList.remove('open'); stopTests(); stopSensMeter(); }
 // ======== Sunucu Ayarlari (ust taraftan) ========
 function openServerSettings(){
   if(!currentServer) return;
@@ -1090,7 +1104,8 @@ function settingsTab(name){
     $('pttKeyRow').style.display = pttOn ? 'flex' : 'none';
     $('pttKeyLabel').textContent = keyName(pttKey);
     populateDevices();
-  } else stopTests();
+    startSensMeter();
+  } else { stopTests(); stopSensMeter(); }
   if(name==='apps') updateSpotifyBtn();
   if(name==='server'){
     $('svName').value = serverInfo.name || '';
@@ -2555,13 +2570,16 @@ function setSpeak(id, on){
   else if(id==='call-local'){ const lv=$('callLocalVideo'); if(lv) lv.classList.toggle('speaking', on); }
   else { const vm=document.getElementById('vmember-'+id); if(vm) vm.classList.toggle('speaking', on); }
 }
+const SPEAK_HOLD=320;   // ms — bu kadar sure konusma yoksa yesil soner (titremeyi onler)
 function speakingLoop(){
+  const now=performance.now();
   speakAnalysers.forEach((a,id)=>{
     a.analyser.getByteTimeDomainData(a.data);   // zaman alani RMS = konusma algilama
     let sum=0; for(let i=0;i<a.data.length;i++){ const v=(a.data[i]-128)/128; sum+=v*v; }
     const rms=Math.sqrt(sum/a.data.length);
     const live = id==='local' ? micEnabled() : (id==='call-local' ? callMicOn : true);
-    setSpeak(id, live && rms>0.04);
+    if(live && rms>micSpeakThreshold) a.spkUntil = now + SPEAK_HOLD;   // hold suresini uzat
+    setSpeak(id, live && a.spkUntil!=null && now < a.spkUntil);
   });
   speakRAF=requestAnimationFrame(speakingLoop);
 }
@@ -2618,6 +2636,39 @@ async function populateDevices(){
 }
 function setMic(v){ selectedMic=v; localStorage.setItem('micDev',v); }
 function setCam(v){ selectedCam=v; localStorage.setItem('camDev',v); }
+// --- Mikrofon hassasiyeti (konusma esigi) ---
+let micSpeakThreshold = 0.04;
+function sensToThreshold(s){ s=Math.max(0,Math.min(100,+s||0)); return 0.005 + (100-s)/100*0.115; }
+function setMicSensitivity(s){
+  micSpeakThreshold = sensToThreshold(s);
+  localStorage.setItem('micSens', Math.max(0,Math.min(100,+s||0)));
+  const mk=$('sensMark'); if(mk) mk.style.left=Math.min(98, micSpeakThreshold*350)+'%';
+}
+(function(){ const v=localStorage.getItem('micSens'); if(v!=null && !isNaN(+v)) micSpeakThreshold=sensToThreshold(+v); })();
+// canlı hassasiyet metresi (sadece Ses & Video ayar sekmesi acikken)
+let sensStream=null, sensRAF=null;
+async function startSensMeter(){
+  const sl=$('sensSlider'); if(sl){ const v=localStorage.getItem('micSens'); sl.value = (v!=null&&!isNaN(+v))?+v:70; }
+  setMicSensitivity($('sensSlider')?$('sensSlider').value:70);
+  if(sensStream) return;
+  try{
+    sensStream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints()});
+    _actx=_actx||new(window.AudioContext||window.webkitAudioContext)(); if(_actx.state==='suspended') _actx.resume();
+    const src=_actx.createMediaStreamSource(sensStream); const an=_actx.createAnalyser(); an.fftSize=1024; src.connect(an);
+    const data=new Uint8Array(an.fftSize);
+    const loop=()=>{ an.getByteTimeDomainData(data); let s=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; s+=v*v; }
+      const rms=Math.sqrt(s/data.length); const lv=$('sensLevel');
+      if(lv){ const w=Math.min(100,Math.round(rms*350)); lv.style.width=w+'%';
+        lv.style.background = rms>micSpeakThreshold ? 'var(--green)' : '#7a7d85'; }
+      sensRAF=requestAnimationFrame(loop); };
+    loop();
+  }catch(e){}
+}
+function stopSensMeter(){
+  if(sensStream){ sensStream.getTracks().forEach(t=>t.stop()); sensStream=null; }
+  if(sensRAF){ cancelAnimationFrame(sensRAF); sensRAF=null; }
+  const lv=$('sensLevel'); if(lv) lv.style.width='0%';
+}
 let testStream=null, testRAF=null;
 function stopTests(){
   if(testStream){ testStream.getTracks().forEach(t=>t.stop()); testStream=null; }
