@@ -1166,6 +1166,11 @@ function saveActivity(){
   updateMyStatus(); $('statusMenu').classList.remove('show');
   fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,activityType:myActivityType,activityName:myActivityName})});
 }
+// Masaustu (Electron) otomatik oyun algilamasi buradan etkinligi ayarlar
+window.appAutoActivity=function(type,name){
+  myActivityType=type||''; myActivityName=name||''; updateMyStatus();
+  if(token) fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,activityType:myActivityType,activityName:myActivityName})}).catch(()=>{});
+};
 function setStatus(s){
   myStatus=s; updateMyStatus(); $('statusMenu').classList.remove('show');
   fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,status:s})});

@@ -15,3 +15,7 @@ data/history.json
 
 # Yuklenen dosyalar
 uploads/
+
+# Masaustu (Electron) ciktilari
+desktop/node_modules/
+desktop/dist/
