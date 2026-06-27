@@ -30,9 +30,18 @@ function createWindow(){
     backgroundColor: '#0b0b0e', title: 'Suicide Hotline',
     icon: iconImage(),
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#0b0b0e', symbolColor: '#ff2e88', height: 34 },
     webPreferences: { contextIsolation: true }
   });
   win.loadURL(APP_URL);
+  // Ust bar uygulamaya gomulsun: surukleme alani + pencere kontrollerine yer ac
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.insertCSS(
+      '.topbar{-webkit-app-region:drag; padding-right:150px}' +
+      '.topbar button,.topbar input,.topbar .title,.topbar [onclick]{-webkit-app-region:no-drag}'
+    ).catch(()=>{});
+  });
   // disari acilan linkler tarayicida acilsin
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   // kapatinca tepsiye in (tepsi varsa)

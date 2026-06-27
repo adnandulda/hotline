@@ -360,6 +360,14 @@
   .emoji-pop.show{display:flex}
   .emoji-pop span{cursor:pointer; font-size:20px; padding:4px 5px; border-radius:6px}
   .emoji-pop span:hover{background:#3a3d44}
+  /* Sag tik menusu */
+  .ctx-menu{position:fixed; min-width:190px; background:#0f0f13; border:1px solid #2a1a24; border-radius:8px;
+    padding:6px; display:none; z-index:95; box-shadow:0 8px 28px rgba(0,0,0,.7)}
+  .ctx-menu.show{display:block}
+  .ctx-item{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:5px; cursor:pointer; font-size:14px; color:var(--text)}
+  .ctx-item:hover{background:var(--accent); color:#fff}
+  .ctx-item.danger{color:var(--red)} .ctx-item.danger:hover{background:var(--red); color:#fff}
+  .ctx-sep{height:1px; background:#2a1a24; margin:5px 6px}
 
   /* Video */
   .video-area{flex:1; padding:12px; background:#000; display:none; overflow:auto}
@@ -625,8 +633,7 @@
 
       <!-- Arkadaslar gorunumu -->
       <div class="friends-view" id="friendsView">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap">
-          <h2>👥 Arkadaslar</h2>
+        <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap">
           <button class="btn" style="width:auto" onclick="copyInvite()">🔗 Davet Et</button>
         </div>
         <div class="add-row" style="margin-top:14px">
@@ -845,6 +852,9 @@
 <!-- Emoji secici (tepki + mesaj kutusu) -->
 <div class="emoji-pop" id="emojiPop"></div>
 
+<!-- Sag tik menusu -->
+<div class="ctx-menu" id="ctxMenu"></div>
+
 <!-- GELEN ARAMA -->
 <div id="incomingCall">
   <div class="inc-card">
@@ -1043,6 +1053,10 @@ function startSession(t, name){
   localStorage.setItem('username', username);
   $('login').style.display='none'; $('app').style.display='block';
   $('meName').textContent = username;
+  // sol alt: avatari/durumu aninda goster (init beklemeden)
+  { const a=$('meAva'), av=localStorage.getItem('myAvatar');
+    if(av){ a.style.backgroundImage=`url('${av}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(username); }
+    $('meSub').textContent='Cevrimici'; }
   ensureNotifPerm();
   connect();
   setTimeout(startSpotifyPoll, 1500);   // Spotify bagliysa calan sarkiyi cek
@@ -1216,8 +1230,8 @@ function handle(m){
 function refreshMe(){
   const url = myProfile.avatar;
   const a = $('meAva');
-  if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; }
-  else { a.style.backgroundImage=''; a.textContent=initials(username); }
+  if(url){ a.style.backgroundImage=`url('${url}')`; a.textContent=''; localStorage.setItem('myAvatar', url); }
+  else { a.style.backgroundImage=''; a.textContent=initials(username); localStorage.removeItem('myAvatar'); }
   updateMyStatus();
 }
 
@@ -1462,17 +1476,17 @@ function chToolsHTML(kind,i){
 function renderChannels(){
   $('textChannels').innerHTML = textChannels.map((c,i)=>{
     const u = unread[currentServer+'#'+c]||0;
-    return `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''} ${u?'unread':''}" onclick="openChannel('${esc(c)}')">
+    return `<div class="channel ${c===currentChannel&&!inVoiceView()&&!currentDM?'active':''} ${u?'unread':''}" data-ch="${esc(c)}" data-kind="text" data-idx="${i}" onclick="openChannel('${esc(c)}')">
        <span class="cname"># ${esc(c)}</span>
        ${u?`<span class="ch-unread">${u>99?'99+':u}</span>`:''}${chToolsHTML('text',i)}</div>`;
   }).join('');
   $('voiceChannels').innerHTML = voiceChannels.map((c,i)=>{
     const mems=(presenceVoice[c]||[]).map(u=>{
       const ic = (u.deafened?'<span title="Sagirlastirildi">🙉</span>':'') + (u.muted&&!u.deafened?'<span title="Susturuldu">🔇</span>':'');
-      return `<div class="voice-member" id="vmember-${u.id}"><span class="vm-ava">${avaHTML(u.user,20)}</span>`+
+      return `<div class="voice-member" id="vmember-${u.id}" data-user="${esc(u.user)}"><span class="vm-ava">${avaHTML(u.user,20)}</span>`+
         `<span class="vm-name" onclick="openProfile('${esc(u.user)}')" style="cursor:pointer">${esc(u.user)}</span><span class="vm-icons">${ic}</span></div>`;
     }).join('');
-    return `<div class="channel ${c===currentVoiceRoom?'active':''}" onclick="joinVoice('${esc(c)}')">
+    return `<div class="channel ${c===currentVoiceRoom?'active':''}" data-ch="${esc(c)}" data-kind="voice" data-idx="${i}" onclick="joinVoice('${esc(c)}')">
        <span class="cname">🔊 ${esc(c)}</span>${chToolsHTML('voice',i)}</div><div class="voice-members">${mems}</div>`;
   }).join('');
 }
@@ -1629,7 +1643,7 @@ function renderDMList(){
     const u=dmUnread[d.user.toLowerCase()]||0;
     const online=onlineUsers.some(o=>o.user.toLowerCase()===d.user.toLowerCase());
     const active = currentDM && currentDM.toLowerCase()===d.user.toLowerCase();
-    return `<div class="dm-row ${active?'active':''}" onclick="openDM('${esc(d.user)}')">${avaHTML(d.user,28)}`+
+    return `<div class="dm-row ${active?'active':''}" data-user="${esc(d.user)}" onclick="openDM('${esc(d.user)}')">${avaHTML(d.user,28)}`+
       `<span class="dn">${esc(d.user)}</span>${u?`<span class="dm-badge">${u>99?'99+':u}</span>`:''}</div>`;
   }).join('');
 }
@@ -1946,6 +1960,69 @@ document.addEventListener('click', e=>{
   if(!e.target.closest('.emoji-pop') && !e.target.closest('[onclick*="EmojiInput"]') && !e.target.closest('[onclick*="ReactPicker"]')) closeEmojiPop();
   if(!e.target.closest('#statusMenu') && !e.target.closest('#meAva')) $('statusMenu').classList.remove('show');
   if(!e.target.closest('#userPopout') && !e.target.closest('[onclick*="openProfile"]')) closePopout();
+  if(!e.target.closest('#ctxMenu')) closeCtx();
+});
+
+// ======== Sag tik (context) menusu ========
+function closeCtx(){ $('ctxMenu').classList.remove('show'); }
+function showCtx(x,y,items){
+  const m=$('ctxMenu');
+  m.innerHTML=items.map((it,i)=> it.sep?'<div class="ctx-sep"></div>':`<div class="ctx-item ${it.danger?'danger':''}" data-i="${i}">${(it.icon||'')+' '}${esc(it.label)}</div>`).join('');
+  [...m.querySelectorAll('.ctx-item')].forEach(el=>{ const it=items[+el.dataset.i]; el.onclick=()=>{ closeCtx(); it.on&&it.on(); }; });
+  m.classList.add('show'); m.style.left='0px'; m.style.top='0px';
+  const w=m.offsetWidth, h=m.offsetHeight;
+  m.style.left=Math.min(x, window.innerWidth-w-8)+'px';
+  m.style.top=Math.min(y, window.innerHeight-h-8)+'px';
+}
+function insertMention(user){ const inp=$('msgInput'); inp.value=(inp.value?inp.value.replace(/\s*$/,'')+' ':'')+'@'+(user||'').replace(/\s+/g,'')+' '; inp.focus(); }
+function copyMsgText(id){ const el=msgEl(id); const t=el&&el.querySelector('.text'); const raw=t?(t.dataset.raw||t.textContent):''; if(navigator.clipboard) navigator.clipboard.writeText(raw).then(()=>toast('Kopyalandi')).catch(()=>{}); }
+function ctxMessage(el,x,y){
+  const id=el.dataset.id, u=el.dataset.user||'', mine=u.toLowerCase()===username.toLowerCase();
+  const hasText=!!(el.querySelector('.text'));
+  const items=[
+    { icon:'😀', label:'Tepki ekle', on:()=>showEmojiPop(x,y,emo=>reactMsg(id,emo)) },
+    { icon:'↩️', label:'Yanitla', on:()=>startReply(id) },
+  ];
+  if(hasText) items.push({ icon:'📋', label:'Metni kopyala', on:()=>copyMsgText(id) });
+  if(mine && hasText) items.push({ icon:'✏️', label:'Duzenle', on:()=>startEdit(id) });
+  if(u && !mine) items.push({ icon:'@', label:u+' bahset', on:()=>insertMention(u) });
+  if(mine || hasPermClient('manageMessages')) items.push({ sep:true }, { icon:'🗑️', label:'Sil', danger:true, on:()=>deleteMsg(id) });
+  showCtx(x,y,items);
+}
+function ctxChannel(el,x,y){
+  const kind=el.dataset.kind, name=el.dataset.ch, idx=+el.dataset.idx;
+  const items=[];
+  if(kind==='text') items.push({ icon:'#️⃣', label:'Kanali ac', on:()=>openChannel(name) });
+  else items.push({ icon:'🔊', label:'Sesliye katil', on:()=>joinVoice(name) });
+  if(hasPermClient('manageChannels')){
+    items.push({ sep:true },
+      { icon:'✏️', label:'Yeniden adlandir', on:()=>renameChannel(kind,idx) },
+      { icon:'🗑️', label:'Sil', danger:true, on:()=>deleteChannel(kind,idx) });
+  }
+  showCtx(x,y,items);
+}
+function ctxUser(user,x,y){
+  if(!user) return;
+  const me=user.toLowerCase()===username.toLowerCase();
+  const items=[{ icon:'👤', label:'Profili gor', on:()=>openProfile(user) }];
+  if(!me){
+    items.push({ icon:'💬', label:'Mesaj gonder', on:()=>openDM(user) });
+    items.push({ icon:'@', label:'Bahset (@)', on:()=>insertMention(user) });
+    if(currentServer && hasPermClient('kickMembers') && (serverInfo.owner||'').toLowerCase()!==user.toLowerCase())
+      items.push({ sep:true }, { icon:'👢', label:'Sunucudan at', danger:true, on:()=>kickMember(user) });
+  }
+  showCtx(x,y,items);
+}
+document.addEventListener('contextmenu', e=>{
+  if($('app').style.display==='none' || window.innerWidth<=820) return;
+  const nameEl=e.target.closest('#messages .msg .name, #messages .msg .ava');
+  const userRow=e.target.closest('.member[data-user], .dm-row[data-user], .voice-member[data-user]');
+  const msgItem=e.target.closest('#messages .msg[data-id]');
+  const chItem=e.target.closest('#textChannels .channel, #voiceChannels .channel');
+  if(nameEl){ const m=nameEl.closest('.msg'); e.preventDefault(); ctxUser(m&&m.dataset.user, e.clientX, e.clientY); }
+  else if(userRow){ e.preventDefault(); ctxUser(userRow.dataset.user, e.clientX, e.clientY); }
+  else if(msgItem){ e.preventDefault(); ctxMessage(msgItem, e.clientX, e.clientY); }
+  else if(chItem){ e.preventDefault(); ctxChannel(chItem, e.clientX, e.clientY); }
 });
 
 // --- Yaziyor... gostergesi ---
@@ -1986,7 +2063,7 @@ function renderMembers(){
     const nameStyle = col ? ` style="color:${col}"` : '';
     const sub = (u.spotify&&u.spotify.track ? '🎧 '+u.spotify.track+' — '+u.spotify.artist : '') || activityText(u.activityType,u.activityName) || u.customStatus || '';
     const subHtml = (u.online && sub) ? `<div class="msub">${esc(sub)}</div>` : '';
-    return `<div class="member ${u.online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,32)}`+
+    return `<div class="member ${u.online?'':'off'}" data-user="${esc(u.user)}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,32)}`+
     `<div class="mcol"><span class="mname"${nameStyle}>${esc(u.user)}${crown}</span>${subHtml}</div><span class="dot" style="background:${si.color}"></span></div>`;
   };
   let html = on.map(row).join('');
