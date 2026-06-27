@@ -3,16 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#1e1f22">
+<meta name="theme-color" content="#0b0b0e">
 <title>Suicide Hotline</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <link rel="apple-touch-icon" href="/logo.png">
 <style>
   :root{
-    /* Discord paleti */
-    --bg:#313338; --bg2:#2b2d31; --bg3:#1e1f22; --rail:#1e1f22;
-    --accent:#5865f2; --accent2:#4752c4;
-    --text:#f2f3f5; --muted:#949ba4; --green:#23a55a; --red:#da373c; --border:#26282c;
+    /* Y2K siyah + neon pembe paleti */
+    --bg:#0b0b0e; --bg2:#101015; --bg3:#0d0d11; --rail:#070709;
+    --accent:#ff2e88; --accent2:#cc1f6c;
+    --text:#f4f5fa; --muted:#8b8e9c; --green:#23a55a; --red:#ff3b5c; --border:#23232c;
+    --pink:#ff2e88;
     --serif:'gg sans','Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
     --mono:'JetBrains Mono','Consolas','SF Mono',ui-monospace,monospace;
   }
@@ -35,34 +36,34 @@
 
   /* ---- Giris (Y2K / tekno HUD) ---- */
   #login{position:fixed; inset:0; z-index:50; padding:16px; display:flex; align-items:center; justify-content:center;
-    background:#07090d;
+    background:#000;
     background-image:
-      radial-gradient(circle at 50% 30%, rgba(80,140,200,.12), transparent 60%),
-      linear-gradient(rgba(120,180,230,.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(120,180,230,.05) 1px, transparent 1px);
+      radial-gradient(circle at 50% 30%, rgba(255,46,136,.14), transparent 60%),
+      linear-gradient(rgba(255,46,136,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,46,136,.05) 1px, transparent 1px);
     background-size:auto, 34px 34px, 34px 34px}
-  #login .box.tech{position:relative; background:linear-gradient(160deg,#12161d,#0b0e13); padding:34px 30px 30px;
-    width:100%; max-width:400px; text-align:center; color:var(--text); border:1px solid #2a3340;
-    box-shadow:0 0 0 1px rgba(120,200,255,.08), 0 10px 50px rgba(0,0,0,.7), inset 0 0 60px rgba(80,140,200,.05);
+  #login .box.tech{position:relative; background:linear-gradient(160deg,#121016,#0a0a0d); padding:34px 30px 30px;
+    width:100%; max-width:400px; text-align:center; color:var(--text); border:1px solid #3a2030;
+    box-shadow:0 0 0 1px rgba(255,46,136,.12), 0 10px 50px rgba(0,0,0,.8), inset 0 0 60px rgba(255,46,136,.05);
     clip-path:polygon(0 18px, 18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px))}
-  .tcorner{position:absolute; width:18px; height:18px; border:2px solid #7fd0ff; opacity:.85}
+  .tcorner{position:absolute; width:18px; height:18px; border:2px solid var(--pink); opacity:.9}
   .tcorner.tl{top:8px; left:8px; border-right:0; border-bottom:0}
   .tcorner.tr{top:8px; right:8px; border-left:0; border-bottom:0}
   .tcorner.bl{bottom:8px; left:8px; border-right:0; border-top:0}
   .tcorner.br{bottom:8px; right:8px; border-left:0; border-top:0}
   .tech-top{display:flex; align-items:center; gap:6px; justify-content:flex-start; margin-bottom:6px}
-  .tech-top .tdot{width:18px; height:7px; border-radius:4px; background:#2a3340}
-  .tech-top .tcode{margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:1px; color:#6f8aa3}
-  .tech-sub{font-family:var(--mono); font-size:11px; letter-spacing:2px; color:#7fd0ff; margin-bottom:20px; opacity:.85}
+  .tech-top .tdot{width:18px; height:7px; border-radius:4px; background:#3a2030}
+  .tech-top .tcode{margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:1px; color:#a36b87}
+  .tech-sub{font-family:var(--mono); font-size:11px; letter-spacing:2px; color:var(--pink); margin-bottom:20px; opacity:.9}
   #login h1{font-size:26px; margin-bottom:2px; font-family:var(--mono); font-weight:800; letter-spacing:3px;
-    background:linear-gradient(180deg,#fff,#9fb6c9); -webkit-background-clip:text; background-clip:text; color:transparent;
-    text-shadow:0 0 18px rgba(120,200,255,.25)}
+    background:linear-gradient(180deg,#fff,#ff8fc0); -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 18px rgba(255,46,136,.35)}
   #login p{color:var(--muted); margin-bottom:20px; font-size:14px}
-  #login .box.tech input{border-radius:0; border:1px solid #2a3340; background:#0a0d12}
-  #login .box.tech input:focus{border-color:#7fd0ff; box-shadow:0 0 0 1px rgba(127,208,255,.3)}
+  #login .box.tech input{border-radius:0; border:1px solid #3a2030; background:#0a0a0d}
+  #login .box.tech input:focus{border-color:var(--pink); box-shadow:0 0 0 1px rgba(255,46,136,.35)}
   #login .box.tech .btn{border-radius:0; clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
-    background:linear-gradient(180deg,#5aa6e0,#3d6fb0); letter-spacing:1px; font-family:var(--mono); font-weight:700}
-  #login .box.tech .btn.sec{background:#1a212b}
+    background:linear-gradient(180deg,#ff2e88,#cc1f6c); letter-spacing:1px; font-family:var(--mono); font-weight:700}
+  #login .box.tech .btn.sec{background:#1a1016}
   input,textarea{font-size:16px}
   #login input{width:100%; padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg3);
     color:var(--text); margin-bottom:14px; outline:none}
@@ -291,10 +292,15 @@
     font-family:var(--mono); letter-spacing:1px}
   .server-name{font-family:var(--mono); letter-spacing:2px; font-weight:700}
   .topbar .title{font-family:var(--mono); letter-spacing:1px}
+  .channel.active{background:rgba(255,46,136,.14); color:#fff; box-shadow:inset 3px 0 0 var(--pink)}
+  .channel.unread .cname{color:#fff}
+  .rail-item.add{color:var(--pink)} .rail-item.add:hover{background:var(--pink); color:#fff}
+  ::-webkit-scrollbar-thumb:hover{background:var(--accent2)}
+  .modal,.popout,.acct-card{border:1px solid #2a1a24}
 
   /* Orta */
   .main{flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0;
-    background-image:linear-gradient(rgba(120,180,230,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(120,180,230,.025) 1px, transparent 1px);
+    background-image:linear-gradient(rgba(255,46,136,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,46,136,.03) 1px, transparent 1px);
     background-size:38px 38px}
   .topbar{padding:14px; border-bottom:1px solid var(--border); font-weight:500; display:flex; align-items:center; gap:10px}
   .topbar .menu-btn,.topbar .ppl-btn{display:none; background:none; border:none; color:var(--text); font-size:22px; cursor:pointer}
@@ -460,7 +466,7 @@
       <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
       <span class="tcode">SH // 4763.4738.3098</span>
     </div>
-    <img src="/logo.png" alt="" style="width:96px;height:96px;object-fit:contain;display:block;margin:6px auto 10px;filter:drop-shadow(0 0 14px rgba(120,200,255,.35))">
+    <img src="/logo.png" alt="" style="width:96px;height:96px;object-fit:contain;display:block;margin:6px auto 10px;filter:drop-shadow(0 0 16px rgba(255,46,136,.45))">
     <h1>SUICIDE HOTLINE</h1>
     <div class="tech-sub">[ SECURE CHANNEL · v1.0 ]</div>
 

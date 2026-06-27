@@ -27,7 +27,7 @@ function iconImage(){
 function createWindow(){
   win = new BrowserWindow({
     width: 1200, height: 800, minWidth: 760, minHeight: 480,
-    backgroundColor: '#313338', title: 'Suicide Hotline',
+    backgroundColor: '#0b0b0e', title: 'Suicide Hotline',
     icon: iconImage(),
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true }
