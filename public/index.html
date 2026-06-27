@@ -9,11 +9,12 @@
 <link rel="apple-touch-icon" href="/logo.png">
 <style>
   :root{
-    /* Y2K siyah + neon pembe paleti */
-    --bg:#0b0b0e; --bg2:#101015; --bg3:#0d0d11; --rail:#070709;
-    --accent:#ff2e88; --accent2:#cc1f6c;
-    --text:#f4f5fa; --muted:#8b8e9c; --green:#23a55a; --red:#ff3b5c; --border:#23232c;
-    --pink:#ff2e88;
+    /* Modern yumusak koyu tema (Linear/premium SaaS havasi) */
+    --bg:#0c0c0f; --bg2:#151519; --bg3:#101013; --rail:#0a0a0c;
+    --accent:#7c6cff; --accent2:#6a5af0;
+    --text:#e9e9ee; --muted:#8a8a96; --green:#3fcf8e; --red:#f6685e; --border:rgba(255,255,255,.07);
+    --pink:#7c6cff;
+    --card:#16161b; --hover:rgba(255,255,255,.05); --radius:12px;
     --serif:'gg sans','Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif;
     --mono:'JetBrains Mono','Consolas','SF Mono',ui-monospace,monospace;
   }
@@ -34,36 +35,22 @@
   .ava{border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center;
     font-weight:700; color:#fff; background-size:cover; background-position:center; flex-shrink:0; cursor:pointer}
 
-  /* ---- Giris (Y2K / tekno HUD) ---- */
+  /* ---- Giris (modern yumusak kart) ---- */
   #login{position:fixed; inset:0; z-index:50; padding:16px; display:flex; align-items:center; justify-content:center;
-    background:#000;
-    background-image:
-      radial-gradient(circle at 50% 30%, rgba(255,46,136,.14), transparent 60%),
-      linear-gradient(rgba(255,46,136,.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,46,136,.05) 1px, transparent 1px);
-    background-size:auto, 34px 34px, 34px 34px}
-  #login .box.tech{position:relative; background:linear-gradient(160deg,#121016,#0a0a0d); padding:34px 30px 30px;
-    width:100%; max-width:400px; text-align:center; color:var(--text); border:1px solid #3a2030;
-    box-shadow:0 0 0 1px rgba(255,46,136,.12), 0 10px 50px rgba(0,0,0,.8), inset 0 0 60px rgba(255,46,136,.05);
-    clip-path:polygon(0 18px, 18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px))}
-  .tcorner{position:absolute; width:18px; height:18px; border:2px solid var(--pink); opacity:.9}
-  .tcorner.tl{top:8px; left:8px; border-right:0; border-bottom:0}
-  .tcorner.tr{top:8px; right:8px; border-left:0; border-bottom:0}
-  .tcorner.bl{bottom:8px; left:8px; border-right:0; border-top:0}
-  .tcorner.br{bottom:8px; right:8px; border-left:0; border-top:0}
-  .tech-top{display:flex; align-items:center; gap:6px; justify-content:flex-start; margin-bottom:6px}
-  .tech-top .tdot{width:18px; height:7px; border-radius:4px; background:#3a2030}
-  .tech-top .tcode{margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:1px; color:#a36b87}
-  .tech-sub{font-family:var(--mono); font-size:11px; letter-spacing:2px; color:var(--pink); margin-bottom:20px; opacity:.9}
-  #login h1{font-size:26px; margin-bottom:2px; font-family:var(--mono); font-weight:800; letter-spacing:3px;
-    background:linear-gradient(180deg,#fff,#ff8fc0); -webkit-background-clip:text; background-clip:text; color:transparent;
-    text-shadow:0 0 18px rgba(255,46,136,.35)}
+    background:radial-gradient(1200px 600px at 50% -10%, rgba(124,108,255,.16), transparent 60%), #08080a}
+  #login .box.tech{position:relative; background:rgba(22,22,27,.85); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+    padding:34px 30px 30px; width:100%; max-width:400px; text-align:center; color:var(--text);
+    border:1px solid var(--border); border-radius:18px; box-shadow:0 24px 70px rgba(0,0,0,.6)}
+  .tcorner{display:none}
+  .tech-top{display:none}
+  .tech-sub{font-size:12px; letter-spacing:.5px; color:var(--muted); margin-bottom:22px}
+  #login h1{font-size:24px; margin-bottom:2px; font-weight:700; letter-spacing:.3px; color:var(--text)}
   #login p{color:var(--muted); margin-bottom:20px; font-size:14px}
-  #login .box.tech input{border-radius:0; border:1px solid #3a2030; background:#0a0a0d}
-  #login .box.tech input:focus{border-color:var(--pink); box-shadow:0 0 0 1px rgba(255,46,136,.35)}
-  #login .box.tech .btn{border-radius:0; clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
-    background:linear-gradient(180deg,#ff2e88,#cc1f6c); letter-spacing:1px; font-family:var(--mono); font-weight:700}
-  #login .box.tech .btn.sec{background:#1a1016}
+  #login .box.tech input{border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.04)}
+  #login .box.tech input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(124,108,255,.18)}
+  #login .box.tech .btn{border-radius:10px; background:var(--accent); font-weight:600; letter-spacing:.2px}
+  #login .box.tech .btn:hover{background:var(--accent2)}
+  #login .box.tech .btn.sec{background:rgba(255,255,255,.06)}
   input,textarea{font-size:16px}
   #login input{width:100%; padding:14px; border-radius:12px; border:1px solid var(--border); background:var(--bg3);
     color:var(--text); margin-bottom:14px; outline:none}
@@ -287,21 +274,17 @@
   .rail-item .badge{position:absolute; bottom:-2px; right:-2px; min-width:20px; height:20px; line-height:16px;
     border:3px solid var(--rail); padding:0 4px}
 
-  /* Tekno aksanlar (uygulama geneli) */
-  .ch-group, .po-label, .settings-nav-title, .acct-field .k, .flist-title, .label, .vs-title{
-    font-family:var(--mono); letter-spacing:1px}
-  .server-name{font-family:var(--mono); letter-spacing:2px; font-weight:700}
-  .topbar .title{font-family:var(--mono); letter-spacing:1px}
-  .channel.active{background:rgba(255,46,136,.14); color:#fff; box-shadow:inset 3px 0 0 var(--pink)}
+  /* Modern aksanlar (uygulama geneli) */
+  .ch-group, .po-label, .settings-nav-title, .acct-field .k, .flist-title, .label{
+    letter-spacing:.6px; text-transform:uppercase; font-size:11px; color:var(--muted)}
+  .server-name{letter-spacing:.3px; font-weight:600}
+  .channel.active{background:var(--hover); color:#fff; box-shadow:inset 2px 0 0 var(--accent)}
   .channel.unread .cname{color:#fff}
-  .rail-item.add{color:var(--pink)} .rail-item.add:hover{background:var(--pink); color:#fff}
-  ::-webkit-scrollbar-thumb:hover{background:var(--accent2)}
-  .modal,.popout,.acct-card{border:1px solid #2a1a24}
+  .rail-item.add{color:var(--accent)} .rail-item.add:hover{background:var(--accent); color:#fff}
+  .modal,.popout,.acct-card{border:1px solid var(--border)}
 
   /* Orta */
-  .main{flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0;
-    background-image:linear-gradient(rgba(255,46,136,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,46,136,.03) 1px, transparent 1px);
-    background-size:38px 38px}
+  .main{flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0}
   .topbar{padding:14px; border-bottom:1px solid var(--border); font-weight:500; display:flex; align-items:center; gap:10px}
   .topbar .menu-btn,.topbar .ppl-btn{display:none; background:none; border:none; color:var(--text); font-size:22px; cursor:pointer}
   .topbar .title{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}

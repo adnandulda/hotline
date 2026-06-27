@@ -31,7 +31,7 @@ function createWindow(){
     icon: iconImage(),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0b0b0e', symbolColor: '#ff2e88', height: 34 },
+    titleBarOverlay: { color: '#0c0c0f', symbolColor: '#7c6cff', height: 34 },
     webPreferences: { contextIsolation: true }
   });
   win.loadURL(APP_URL);
