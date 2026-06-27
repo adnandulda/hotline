@@ -202,6 +202,22 @@
   .po-note::placeholder{color:var(--muted)}
   .po-actions{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
   .po-actions .btn{width:auto; flex:1; min-width:90px; padding:9px 12px; font-size:14px}
+  #poAdmin .btn{width:auto; padding:8px 14px; font-size:13px; margin-top:6px}
+  .po-ava{cursor:pointer; transition:filter .15s, transform .15s}
+  .po-ava:hover{filter:brightness(1.08)}
+  /* Buyuk profil (avatara tiklayinca) */
+  .po-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:79; display:none}
+  .po-backdrop.show{display:block}
+  .popout.big{width:460px; left:50%!important; top:50%!important; transform:translate(-50%,-50%);
+    max-height:90vh; overflow:auto; animation:bigIn .22s cubic-bezier(.2,.7,.3,1)}
+  @keyframes bigIn{from{opacity:0; transform:translate(-50%,-46%) scale(.97)} to{opacity:1; transform:translate(-50%,-50%) scale(1)}}
+  .popout.big .po-banner{height:130px}
+  .popout.big .po-avawrap{top:78px; left:22px; width:108px; height:108px}
+  .popout.big .po-ava{width:108px; height:108px; font-size:40px}
+  .popout.big .po-statusdot{width:28px; height:28px}
+  .popout.big .po-card{padding:58px 16px 16px}
+  .popout.big .po-name{font-size:25px}
+  .popout.big::-webkit-scrollbar{width:8px}
   .server-name{padding:18px 16px; font-weight:500; font-size:18px; border-bottom:1px solid var(--border); font-family:var(--serif);
     display:flex; align-items:center; gap:9px}
   .rec-dot{width:12px; height:12px; border-radius:50%; background:#ff3b30; flex-shrink:0;
@@ -915,6 +931,7 @@
 </div>
 
 <!-- Kullanici profil pop-out'u (tiklanan yerin yaninda acilir) -->
+<div class="po-backdrop" id="poBackdrop" onclick="closePopout()"></div>
 <div class="popout" id="userPopout">
   <div class="po-banner" id="poBanner" title="Profil afisi"></div>
   <div class="po-avawrap"><div class="po-ava" id="poAva"></div><div class="po-statusdot" id="poStatusDot"></div></div>
@@ -967,6 +984,9 @@
 <script>
 // ======== Durum ========
 const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+// Davet linkiyle gelindiyse kodu sakla (giris+baglanti sonrasi otomatik katil)
+let pendingInvite = (new URLSearchParams(location.search)).get('invite') || '';
+if(pendingInvite){ try{ history.replaceState({},'',location.pathname); }catch(e){} }
 let username = '';
 let token = localStorage.getItem('token') || '';
 let currentChannel = null;
@@ -1175,6 +1195,7 @@ function handle(m){
       myServers = m.servers || [];
       refreshMe(); updateReqBadge(); renderRail(); fetchDMList();
       goHome();
+      if(pendingInvite){ const code=pendingInvite; pendingInvite=''; joinByCode(code, m=>toast(m)); }
       break;
     case 'message': {
       cacheProfile(m.user, {avatar:m.avatar});
@@ -1497,14 +1518,20 @@ async function createServer(){
 async function joinServer(){
   const code=$('joinCode').value.trim(); const err=$('serverModalErr'); err.textContent='';
   if(!code){ err.textContent='Davet kodu gir'; return; }
+  const ok=await joinByCode(code, m=>{ err.textContent=m; });
+  if(ok) closeModal('serverModal');
+}
+// Davet kodu/linki ile katil. Hata olursa onErr cagrilir. Basariliysa true doner.
+async function joinByCode(code, onErr){
   try{
     const r=await fetch('/api/server-join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,code})});
     const d=await r.json();
-    if(!r.ok){ err.textContent=d.error||'Katilinamadi'; return; }
+    if(!r.ok){ onErr&&onErr(d.error||'Katilinamadi'); return false; }
     if(!myServers.some(s=>s.id===d.server.id)) myServers.push({id:d.server.id,name:d.server.name,icon:d.server.icon,owner:d.server.owner});
-    closeModal('serverModal'); renderRail(); openServer(d.server.id);
+    renderRail(); openServer(d.server.id);
     toast('Sunucuya katildin: '+d.server.name);
-  }catch(e){ err.textContent='Baglanti hatasi'; }
+    return true;
+  }catch(e){ onErr&&onErr('Baglanti hatasi'); return false; }
 }
 
 // ======== Yetkiler ========
@@ -1566,11 +1593,10 @@ async function copyInvite(){
     try{ const r=await fetch('/api/invite?token='+encodeURIComponent(token)+'&server='+encodeURIComponent(currentServer)); code=(await r.json()).code; }catch(e){}
   }
   if(!code){ toast('Davet kodu alinamadi'); return; }
-  const link = (location.origin||'') + ' (kod: '+code+')';
-  const text = 'Davet kodu: '+code;
+  const link = (location.origin||'') + '/?invite=' + code;
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(code).then(()=>toast('🔗 Davet kodu kopyalandi: '+code)).catch(()=>prompt('Davet kodu (kopyala):', code));
-  } else prompt('Davet kodu (kopyala):', code);
+    navigator.clipboard.writeText(link).then(()=>toast('🔗 Davet linki kopyalandi!')).catch(()=>prompt('Davet linki (kopyala):', link));
+  } else prompt('Davet linki (kopyala):', link);
 }
 
 // ======== Roller ========
@@ -2154,7 +2180,8 @@ function renderMembers(){
 // ======== Profil pop-out (tiklanan yerin yaninda) ========
 let lastClickX=window.innerWidth/2, lastClickY=window.innerHeight/2;
 document.addEventListener('mousedown', e=>{ lastClickX=e.clientX; lastClickY=e.clientY; }, true);
-function closePopout(){ $('userPopout').style.display='none'; stopPoSpotify(); }
+function closePopout(){ const po=$('userPopout'); po.style.display='none'; po.classList.remove('big'); $('poBackdrop').classList.remove('show'); stopPoSpotify(); }
+function enlargeProfile(){ $('userPopout').classList.add('big'); $('poBackdrop').classList.add('show'); }
 function saveNote(){ const u=$('poNote').dataset.user; if(u) localStorage.setItem('note:'+u.toLowerCase(), $('poNote').value); }
 // --- Spotify karti (pop-out) ---
 let poSpTimer=null;
@@ -2175,6 +2202,7 @@ function showPoSpotify(sp){
 }
 function stopPoSpotify(){ if(poSpTimer){ clearInterval(poSpTimer); poSpTimer=null; } const el=$('poSpotify'); if(el) el.style.display='none'; }
 function positionPopout(el, x, y){
+  el.classList.remove('big'); $('poBackdrop').classList.remove('show');
   el.style.display='block';
   const w=el.offsetWidth||300, h=el.offsetHeight||320;
   let left = x+10; if(left+w > window.innerWidth-8) left = x-w-10; if(left<8) left=8;
@@ -2197,6 +2225,7 @@ function openProfile(user){
     // avatar + durum noktasi
     const a=$('poAva');
     if(p.avatar){ a.style.backgroundImage=`url('${p.avatar}')`; a.textContent=''; } else { a.style.backgroundImage=''; a.textContent=initials(user); }
+    a.title='Buyuk profili ac'; a.onclick=enlargeProfile;
     const si=statusInfo(p.status, p.online);
     $('poStatusDot').style.background = si.color; $('poStatusDot').title = si.label;
     // ad + @handle
