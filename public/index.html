@@ -77,7 +77,9 @@
     justify-content:center; cursor:pointer; transition:border-radius .15s, background .15s; font-weight:700;
     color:var(--text); position:relative; font-size:18px; background-size:cover; background-position:center; flex-shrink:0}
   .rail-item:hover{border-radius:16px}
-  .rail-item.server:hover, .rail-item.home:hover{background:var(--accent); color:#fff}
+  .rail-item.server{transition:border-radius .15s, filter .15s}
+  .rail-item.server:hover{filter:brightness(.82)}
+  .rail-item.home:hover{filter:brightness(1.1)}
   .rail-item.active{border-radius:16px}
   .rail-item.active::before{content:''; position:absolute; left:-12px; width:4px; height:40px; background:#fff; border-radius:0 4px 4px 0}
   .rail-item.has-unread:not(.active)::before{content:''; position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:8px; height:8px; background:#fff; border-radius:50%}
@@ -1172,7 +1174,7 @@ function handle(m){
       myFriends = m.friends || myFriends;
       myServers = m.servers || [];
       refreshMe(); updateReqBadge(); renderRail(); fetchDMList();
-      if(myServers.length) openServer(myServers[0].id); else goHome();
+      goHome();
       break;
     case 'message': {
       cacheProfile(m.user, {avatar:m.avatar});
@@ -1430,7 +1432,7 @@ function renderRail(){
     const bg = s.icon ? `background-image:url('${s.icon}')` : '';
     const txt = s.icon ? '' : (s.name||'S').slice(0,2).toUpperCase();
     return `<div class="rail-item server ${s.id===currentServer?'active':''} ${u?'has-unread':''}" title="${esc(s.name)}"
-      style="${bg}" onclick="openServer('${s.id}')">${txt}${u?`<span class="badge">${u>99?'99+':u}</span>`:''}</div>`;
+      data-sid="${s.id}" style="${bg}" onclick="openServer('${s.id}')">${txt}${u?`<span class="badge">${u>99?'99+':u}</span>`:''}</div>`;
   }).join('');
   $('railHome').classList.toggle('active', !currentServer && !currentDM);
 }
@@ -1453,7 +1455,7 @@ function applyChrome(){   // DM/ana sayfa modunda sunucuya ait seyleri gizle
   $('serverGear').style.display = home ? 'none' : '';
   document.querySelectorAll('.ppl-btn').forEach(b=>b.style.display = home ? 'none' : '');
 }
-async function openServer(sid){
+async function openServer(sid, after){
   currentDM=null;
   try{
     const r=await fetch('/api/server-data?token='+encodeURIComponent(token)+'&server='+encodeURIComponent(sid));
@@ -1470,6 +1472,7 @@ async function openServer(sid){
   if(textChannels.length) openChannel(textChannels.includes(currentChannel)?currentChannel:textChannels[0]);
   else { currentChannel=null; renderChannels(); $('messages').innerHTML='<div class="ch-welcome"><div class="ico">#</div><h2>Kanal yok</h2><p>Sahip kanal ekleyene kadar bekle.</p></div>'; }
   closeDrawers();
+  if(typeof after==='function') after();
 }
 function goHome(){
   currentServer=null; currentDM=null; serverInfo={}; textChannels=[]; voiceChannels=[]; currentChannel=null;
@@ -2064,13 +2067,39 @@ function ctxUser(user,x,y){
   }
   showCtx(x,y,items);
 }
+function ctxServer(sid,x,y){
+  const s=(myServers||[]).find(x=>x.id===sid); if(!s) return;
+  const owner=(s.owner||'').toLowerCase()===(username||'').toLowerCase();
+  const items=[
+    { icon:'📂', label:'Sunucuyu Ac', on:()=>openServer(sid) },
+    { icon:'🔗', label:'Davet Linki', on:()=>openServer(sid, ()=>copyInvite()) },
+    { icon:'⚙️', label:'Sunucu Ayarlari', on:()=>openServer(sid, ()=>openServerSettings()) },
+    { sep:true },
+  ];
+  if(owner) items.push({ icon:'🗑️', label:'Sunucuyu Sil', danger:true, on:()=>openServer(sid, ()=>deleteServerNow()) });
+  else items.push({ icon:'🚪', label:'Sunucudan Ayril', danger:true, on:()=>leaveServer(sid) });
+  showCtx(x,y,items);
+}
+function leaveServer(sid){
+  if(!sid) return;
+  const s=(myServers||[]).find(x=>x.id===sid); const nm=s?s.name:'bu sunucu';
+  if(!confirm('"'+nm+'" sunucusundan ayrilmak istiyor musun?')) return;
+  fetch('/api/server-leave',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:clientId,server:sid})})
+    .then(r=>r.json().catch(()=>({}))
+      .then(d=>{ if(r.ok){ toast('Sunucudan ayrildin'); if(currentServer===sid){ currentServer=null; serverInfo={}; goHome(); } }
+        else toast(d.error||'Ayrilamadi'); }))
+    .catch(()=>toast('Ayrilamadi'));
+}
 document.addEventListener('contextmenu', e=>{
   if($('app').style.display==='none' || window.innerWidth<=820) return;
+  const railSrv=e.target.closest('.rail-item.server[data-sid]');
   const nameEl=e.target.closest('#messages .msg .name, #messages .msg .ava');
   const userRow=e.target.closest('.member[data-user], .dm-row[data-user], .voice-member[data-user]');
   const msgItem=e.target.closest('#messages .msg[data-id]');
   const chItem=e.target.closest('#textChannels .channel, #voiceChannels .channel');
-  if(nameEl){ const m=nameEl.closest('.msg'); e.preventDefault(); ctxUser(m&&m.dataset.user, e.clientX, e.clientY); }
+  if(railSrv){ e.preventDefault(); ctxServer(railSrv.dataset.sid, e.clientX, e.clientY); }
+  else if(nameEl){ const m=nameEl.closest('.msg'); e.preventDefault(); ctxUser(m&&m.dataset.user, e.clientX, e.clientY); }
   else if(userRow){ e.preventDefault(); ctxUser(userRow.dataset.user, e.clientX, e.clientY); }
   else if(msgItem){ e.preventDefault(); ctxMessage(msgItem, e.clientX, e.clientY); }
   else if(chItem){ e.preventDefault(); ctxChannel(chItem, e.clientX, e.clientY); }
