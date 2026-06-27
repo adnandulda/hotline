@@ -336,7 +336,11 @@
   .members h3{color:var(--muted); font-size:11px; text-transform:uppercase; margin-bottom:10px; letter-spacing:.5px}
   .member{display:flex; align-items:center; gap:8px; padding:7px; border-radius:8px; font-size:14px; cursor:pointer}
   .member:hover{background:#35373c}
-  .member .dot{width:9px;height:9px;border-radius:50%;background:var(--green); margin-left:auto}
+  .member .dot{width:9px;height:9px;border-radius:50%;background:var(--green); margin-left:auto; flex-shrink:0}
+  .member .mcol{flex:1; min-width:0; line-height:1.2}
+  .member .mcol .mname{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .member .msub{font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .po-activity{font-size:13px; color:var(--text); margin-top:8px; background:#2b2d31; border-radius:6px; padding:7px 10px; font-weight:600}
 
   /* Arkadaslar gorunumu */
   .friends-view{flex:1; overflow-y:auto; padding:18px; display:none}
@@ -496,6 +500,17 @@
         <div class="sm-sep"></div>
         <input id="customStatusInput" class="sm-input" placeholder="Ozel durum yaz..." maxlength="80" onkeydown="if(event.key==='Enter')saveCustomStatus()">
         <div class="sm-opt sm-save" onclick="saveCustomStatus()">💬 Ozel durumu kaydet</div>
+        <div class="sm-sep"></div>
+        <select id="activityType" class="sm-input">
+          <option value="">Etkinlik yok</option>
+          <option value="playing">🎮 Oynuyor</option>
+          <option value="listening">🎧 Dinliyor</option>
+          <option value="watching">📺 Izliyor</option>
+          <option value="streaming">🔴 Yayinda</option>
+          <option value="competing">🏆 Yarisiyor</option>
+        </select>
+        <input id="activityName" class="sm-input" placeholder="Ne? (orn. Valorant)" maxlength="80" onkeydown="if(event.key==='Enter')saveActivity()">
+        <div class="sm-opt sm-save" onclick="saveActivity()">🎯 Etkinligi kaydet</div>
       </div>
 
       <div class="me-bar">
@@ -798,6 +813,7 @@
       <div class="po-name" id="poName"></div>
       <div class="po-handle" id="poHandle"></div>
       <div class="po-customstatus" id="poStatus"></div>
+      <div class="po-activity" id="poActivity"></div>
       <div class="po-section" id="poBioWrap"><div class="po-label">Hakkinda</div><div class="po-bio" id="poBio"></div></div>
       <div class="po-section" id="poMemberWrap"><div class="po-label">Uye Olma Tarihi</div><div class="po-member" id="poMember"></div></div>
       <div class="po-section" id="poRolesWrap"><div class="po-label">Roller</div><div id="poRoles" style="display:flex;flex-wrap:wrap;gap:5px"></div></div>
@@ -1015,6 +1031,7 @@ function handle(m){
     case 'init':
       myProfile = m.me || myProfile; cacheProfile(username, myProfile);
       myStatus = myProfile.status || 'online'; myCustomStatus = myProfile.customStatus || '';
+      myActivityType = myProfile.activityType || ''; myActivityName = myProfile.activityName || '';
       myFriends = m.friends || myFriends;
       myServers = m.servers || [];
       refreshMe(); updateReqBadge(); renderRail(); fetchDMList();
@@ -1058,7 +1075,7 @@ function handle(m){
       break;
     case 'profile-update':
       cacheProfile(m.user, m.profile);
-      if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; myStatus=m.profile.status||'online'; myCustomStatus=m.profile.customStatus||''; refreshMe(); }
+      if(m.user.toLowerCase()===username.toLowerCase()){ myProfile=m.profile; myStatus=m.profile.status||'online'; myCustomStatus=m.profile.customStatus||''; myActivityType=m.profile.activityType||''; myActivityName=m.profile.activityName||''; refreshMe(); }
       renderMembers(); break;
     case 'channels':
       if(m.server!==currentServer) break;
@@ -1132,14 +1149,22 @@ function statusInfo(status, online){
     dnd:{color:'#f23f43',label:'Rahatsiz Etmeyin',emoji:'⛔'}, invisible:{color:'#80848e',label:'Gorunmez',emoji:'⚫'} };
   return map[status] || map.online;
 }
-let myStatus='online', myCustomStatus='';
+let myStatus='online', myCustomStatus='', myActivityType='', myActivityName='';
+function activityVerb(t){ return ({playing:'🎮 Oynuyor',listening:'🎧 Dinliyor',watching:'📺 Izliyor',streaming:'🔴 Yayinda',competing:'🏆 Yarisiyor'})[t] || ''; }
+function activityText(t,n){ const v=activityVerb(t); return (v && n) ? v+' '+n : ''; }
 function updateMyStatus(){
   const si=statusInfo(myStatus, true);
-  const sub=$('meSub'); if(sub) sub.textContent = myCustomStatus || si.label;
+  const act=activityText(myActivityType,myActivityName);
+  const sub=$('meSub'); if(sub) sub.textContent = act || myCustomStatus || si.label;
 }
 function toggleStatusMenu(){
   const sm=$('statusMenu'); const open=sm.classList.toggle('show');
-  if(open) $('customStatusInput').value = myCustomStatus || '';
+  if(open){ $('customStatusInput').value=myCustomStatus||''; $('activityType').value=myActivityType||''; $('activityName').value=myActivityName||''; }
+}
+function saveActivity(){
+  myActivityType=$('activityType').value; myActivityName=$('activityName').value.trim();
+  updateMyStatus(); $('statusMenu').classList.remove('show');
+  fetch('/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:clientId,activityType:myActivityType,activityName:myActivityName})});
 }
 function setStatus(s){
   myStatus=s; updateMyStatus(); $('statusMenu').classList.remove('show');
@@ -1806,17 +1831,18 @@ function uploadFile(){
 function onlineInfo(user){ return onlineUsers.find(o=>o.user.toLowerCase()===user.toLowerCase()) || null; }
 function renderMembers(){
   const memberNames = (serverInfo.members || []);
-  const list = memberNames.map(u=>{ const o=onlineInfo(u); return { user:u, online:!!o, status:o?o.status:'offline', customStatus:o?o.customStatus:'' }; });
+  const list = memberNames.map(u=>{ const o=onlineInfo(u); return { user:u, online:!!o, status:o?o.status:'offline', customStatus:o?o.customStatus:'', activityType:o?o.activityType:'', activityName:o?o.activityName:'' }; });
   const on = list.filter(x=>x.online), off = list.filter(x=>!x.online);
   $('onlineCount').textContent = on.length;
   const row = (u)=>{
     const crown = (serverInfo.owner && u.user.toLowerCase()===serverInfo.owner.toLowerCase()) ? ' <span title="Sunucu sahibi">👑</span>' : '';
     const si = statusInfo(u.status, u.online);
-    const title = u.customStatus ? ` title="${esc(u.customStatus)}"` : '';
     const col = roleColorOf(u.user);
     const nameStyle = col ? ` style="color:${col}"` : '';
-    return `<div class="member ${u.online?'':'off'}"${title} onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,30)}`+
-    `<span class="mname"${nameStyle}>${esc(u.user)}${crown}</span><span class="dot" style="background:${si.color}"></span></div>`;
+    const sub = activityText(u.activityType,u.activityName) || u.customStatus || '';
+    const subHtml = (u.online && sub) ? `<div class="msub">${esc(sub)}</div>` : '';
+    return `<div class="member ${u.online?'':'off'}" onclick="openProfile('${esc(u.user)}')">${avaHTML(u.user,32)}`+
+    `<div class="mcol"><span class="mname"${nameStyle}>${esc(u.user)}${crown}</span>${subHtml}</div><span class="dot" style="background:${si.color}"></span></div>`;
   };
   let html = on.map(row).join('');
   if(off.length) html += `<h3 style="margin-top:16px">Cevrimdisi — ${off.length}</h3>` + off.map(row).join('');
@@ -1861,6 +1887,10 @@ function openProfile(user){
     // ozel durum
     $('poStatus').textContent = p.customStatus || '';
     $('poStatus').style.display = p.customStatus ? 'block' : 'none';
+    // etkinlik (oynuyor/dinliyor...)
+    const actTxt = activityText(p.activityType, p.activityName);
+    $('poActivity').textContent = actTxt;
+    $('poActivity').style.display = actTxt ? 'block' : 'none';
     // hakkinda
     if(p.bio){ $('poBioWrap').style.display='block'; $('poBio').textContent=p.bio; } else $('poBioWrap').style.display='none';
     // uye olma tarihi

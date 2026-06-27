@@ -54,7 +54,8 @@ const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e||''));
 function getProfile(user){
   const p = profiles[key(user)] || {};
   return { user, avatar: p.avatar || null, bio: p.bio || '', status: p.status || 'online', customStatus: p.customStatus || '',
-    banner: p.banner || null, bannerColor: p.bannerColor || '' };
+    banner: p.banner || null, bannerColor: p.bannerColor || '',
+    activityType: p.activityType || '', activityName: p.activityName || '' };
 }
 function getFriendData(user){ if (!friends[key(user)]) friends[key(user)] = { friends: [], requests: [] }; return friends[key(user)]; }
 function dmKey(a, b){ return [key(a), key(b)].sort().join('|'); }
@@ -103,7 +104,8 @@ function onlineUsers(){   // gorunmez olanlar haric, tekil
     if (seen.has(key(c.user))) continue; seen.add(key(c.user));
     const pr=getProfile(c.user);
     if (pr.status==='invisible') continue;
-    arr.push({ user:c.user, avatar:pr.avatar, status:pr.status, customStatus:pr.customStatus });
+    arr.push({ user:c.user, avatar:pr.avatar, status:pr.status, customStatus:pr.customStatus,
+      activityType:pr.activityType, activityName:pr.activityName });
   }
   return arr;
 }
@@ -632,6 +634,8 @@ const server = http.createServer((req, res) => {
       const k = key(c.user); profiles[k] = profiles[k] || {};
       if (['online','idle','dnd','invisible'].includes(data.status)) profiles[k].status = data.status;
       if (typeof data.customStatus === 'string') profiles[k].customStatus = data.customStatus.slice(0, 80);
+      if (typeof data.activityType === 'string' && ['','playing','listening','watching','streaming','competing'].includes(data.activityType)) profiles[k].activityType = data.activityType;
+      if (typeof data.activityName === 'string') profiles[k].activityName = data.activityName.slice(0, 80);
       saveJSON(PROFILES_FILE, profiles);
       broadcast({ type:'profile-update', user:c.user, profile:getProfile(c.user) });
       broadcastPresence();
