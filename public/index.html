@@ -823,6 +823,21 @@
       <input type="range" id="sensSlider" min="0" max="100" value="70" class="sens-range"
         oninput="setMicSensitivity(this.value)">
       <div class="snav-sep" style="margin:16px 0"></div>
+      <div class="label">Yayin (Ekran Paylasimi) Kalitesi</div>
+      <select id="streamQ" class="dev-select" onchange="setStreamQuality(this.value)">
+        <option value="720p30">720p · 30fps  (dusuk — yavas internet)</option>
+        <option value="1080p30">1080p · 30fps  (onerilen)</option>
+        <option value="1080p60">1080p · 60fps  (akici oyun)</option>
+        <option value="1440p60">1440p · 60fps  (2K)</option>
+        <option value="4k30">2160p · 30fps  (4K)</option>
+        <option value="4k60">2160p · 60fps  (4K — cok yuksek)</option>
+      </select>
+      <p style="color:var(--muted); font-size:13px; margin-top:8px">
+        4K cok yuklu: guclu bilgisayar + hizli yukleme (upload) gerektirir ve
+        izleyenin interneti de iyi olmali. Takilirsa 1080p'ye dus.
+        Degisiklik bir sonraki yayinda gecerli olur.
+      </p>
+      <div class="snav-sep" style="margin:16px 0"></div>
       <div class="setting-row">
         <span>🎙️ Bas-konus (PTT) — sadece tusa basiliyken mikrofon acik</span>
         <label class="switch"><input type="checkbox" id="pttToggle" onchange="togglePTT()"><span class="track"></span></label>
@@ -1105,6 +1120,7 @@ function settingsTab(name){
     $('pttKeyLabel').textContent = keyName(pttKey);
     populateDevices();
     startSensMeter();
+    if($('streamQ')) $('streamQ').value = streamQuality;
   } else { stopTests(); stopSensMeter(); }
   if(name==='apps') updateSpotifyBtn();
   if(name==='server'){
@@ -2458,6 +2474,13 @@ async function leaveVoice(){
 function makePeer(peerId){
   const pc=new RTCPeerConnection(RTC_CONF);
   localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+  // yayin aktifse yeni katilan da ekrani gorsun (kamera yerine ekran track'i)
+  if(screenStream){
+    const st=screenStream.getVideoTracks()[0];
+    if(st){ const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) s.replaceTrack(st); else pc.addTrack(st,screenStream); }
+    if(screenAudioTrack){ try{ pc.addTrack(screenAudioTrack,screenStream); }catch(e){} }
+    setTimeout(()=>{ if(st) applyScreenBitrate(st); }, 800);
+  }
   pc.onicecandidate=e=>{ if(e.candidate) signal(peerId,{candidate:e.candidate}); };
   pc.ontrack=e=>addTile(peerId, peerLabel(peerId), e.streams[0], false);
   pc.onconnectionstatechange=()=>{ if(['failed','closed','disconnected'].includes(pc.connectionState)) removePeer(peerId); };
@@ -2748,6 +2771,34 @@ async function toggleCam(){
     }catch(e){ alert('Kameraya erisilemedi: '+e.message); } }
   document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local');
 }
+// --- Yayin (ekran paylasimi) kalitesi ---
+const STREAM_PRESETS = {
+  '720p30':  { w:1280, h:720,  fps:30, kbps:2500 },
+  '1080p30': { w:1920, h:1080, fps:30, kbps:5000 },
+  '1080p60': { w:1920, h:1080, fps:60, kbps:7000 },
+  '1440p60': { w:2560, h:1440, fps:60, kbps:11000 },
+  '4k30':    { w:3840, h:2160, fps:30, kbps:16000 },
+  '4k60':    { w:3840, h:2160, fps:60, kbps:24000 },
+};
+let streamQuality = localStorage.getItem('streamQ') || '1080p30';
+if(!STREAM_PRESETS[streamQuality]) streamQuality='1080p30';
+function setStreamQuality(v){ if(STREAM_PRESETS[v]){ streamQuality=v; localStorage.setItem('streamQ',v);
+  if(screenStream) toast('Yeni kalite bir sonraki yayinda gecerli'); } }
+function screenConstraints(){
+  const p=STREAM_PRESETS[streamQuality]||STREAM_PRESETS['1080p30'];
+  return { video:{ width:{ideal:p.w}, height:{ideal:p.h}, frameRate:{ideal:p.fps} }, audio:true };
+}
+// gondericinin maksimum bit hizini yukselt (yoksa tarayici ~2.5Mbps'e kisar -> bulanik)
+async function applyScreenBitrate(track){
+  const p=STREAM_PRESETS[streamQuality]||STREAM_PRESETS['1080p30'];
+  for(const pc of peers.values()){
+    const s=pc.getSenders().find(x=>x.track===track); if(!s) continue;
+    try{ const prm=s.getParameters(); prm.encodings=prm.encodings&&prm.encodings.length?prm.encodings:[{}];
+      prm.encodings[0].maxBitrate=p.kbps*1000; prm.encodings[0].maxFramerate=p.fps;
+      prm.degradationPreference = p.fps>=60 ? 'maintain-framerate' : 'maintain-resolution';
+      await s.setParameters(prm); }catch(e){}
+  }
+}
 let screenAudioTrack=null;
 async function toggleScreen(){
   if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; $('btnScreen').classList.remove('on');
@@ -2755,14 +2806,18 @@ async function toggleScreen(){
     if(screenAudioTrack){ peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track===screenAudioTrack); if(s) try{pc.removeTrack(s);}catch(e){}}); screenAudioTrack=null; renegotiateAll(); }
     document.getElementById('tile-local').querySelector('video').srcObject=localStream; updateTileVideo('local'); return; }
   try{
-    screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});  // sistem sesini de paylas (tarayiciya bagli)
+    screenStream=await navigator.mediaDevices.getDisplayMedia(screenConstraints());  // sistem sesini de paylas (tarayiciya bagli)
     const st=screenStream.getVideoTracks()[0]; st.onended=()=>{ if(screenStream) toggleScreen(); };
+    const p=STREAM_PRESETS[streamQuality]||STREAM_PRESETS['1080p30'];
+    try{ st.contentHint = p.fps>=60 ? 'motion' : 'detail'; }catch(e){}   // 60fps=akicilik, dusukse netlik
     peers.forEach(pc=>{const s=pc.getSenders().find(x=>x.track&&x.track.kind==='video'); if(s) s.replaceTrack(st); else pc.addTrack(st,screenStream);});
     const sa=screenStream.getAudioTracks()[0];
     if(sa){ screenAudioTrack=sa; peers.forEach(pc=>pc.addTrack(sa,screenStream)); }
     renegotiateAll();
+    setTimeout(()=>applyScreenBitrate(st), 600);   // renegotiation sonrasi bit hizini yukselt
     document.getElementById('tile-local').querySelector('video').srcObject=screenStream; updateTileVideo('local');
     $('btnScreen').classList.add('on');
+    toast('Yayin basladi: '+streamQuality.toUpperCase());
   }catch(e){}
 }
 let renegTimer=null;
